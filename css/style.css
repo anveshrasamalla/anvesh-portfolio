@@ -1,0 +1,174 @@
+body
+{
+	background-color: #FFFF !important;
+}
+
+.intro
+{
+	text-align: center;
+	padding-top: 15%;
+	padding-bottom: 8%;
+	margin-bottom: 23px;
+	margin-top: 0px;
+}
+
+.container {
+    margin: 0 auto;
+    margin-top: 0px;
+    margin-right: auto;
+    margin-bottom: 75px !important;
+    margin-left: auto;
+}
+
+
+#spin {
+
+  color:#EF5350;
+  font-weight: bold;
+  height:20px;
+  width:20px;
+  padding-right: 5px;
+  background-color: White;
+  border-radius: 10px;
+}
+#spin:after {
+  content:"";
+  animation: spin 3s linear infinite;
+}
+
+@keyframes spin {
+  0% { content:"Java"; } 
+  50% { content:"AEM"; }  
+  100% { content:"UI"; } 
+}
+
+h5{color:white;}
+
+
+	.tech-used ul {
+    list-style-type: none;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background-color: #FFFF;
+}
+
+.tech-used li {
+    float: left;
+    color: white;
+    text-align: center;
+    background-color: #EF5350;
+    border-radius: 10px;
+    padding: 5px;
+    margin-right: 10px;
+
+}
+
+.tech-used li a {
+    display: block;
+    color: #EF5350;
+    text-align: center;
+  
+  
+    text-decoration: none;
+}
+
+.tech-used li a:hover {
+    background-color: #FFFF;
+}
+
+
+.card-panel
+{
+border-radius: 10px !important;
+margin-top: 30px !important;	
+}
+
+.col s12 m3 project-desc
+{
+	  border-radius: 10px;
+}
+
+
+
+.social-network a.icoRss:hover {
+	background-color: #F56505;
+}
+.social-network a.icoFacebook:hover {
+	background-color:#3B5998;
+}
+.social-network a.icoTwitter:hover {
+	background-color:#33ccff;
+}
+.social-network a.icoGoogle:hover {
+	background-color:#BD3518;
+}
+.social-network a.icoVimeo:hover {
+	background-color:#0590B8;
+}
+.social-network a.icoLinkedin:hover {
+	background-color:#007bb7;
+}
+.social-network a.icogithub:hover {
+	background-color:#007bb7;
+}
+.social-network a.icoRss:hover i, .social-network a.icoFacebook:hover i, .social-network a.icoTwitter:hover i,
+.social-network a.icoGoogle:hover i, .social-network a.icoVimeo:hover i, .social-network a.icoLinkedin:hover i {
+	color:#fff;
+}
+a.socialIcon:hover, .socialHoverClass {
+	color:#44BCDD;
+}
+
+.social-circle li a {
+	display:inline-block;
+	position:relative;
+	margin:0 auto 0 auto;
+	-moz-border-radius:50%;
+	-webkit-border-radius:50%;
+	border-radius:50%;
+	text-align:center;
+	width: 50px;
+	height: 50px;
+	font-size:20px;
+}
+.social-circle li i {
+	margin:0;
+	line-height:50px;
+	text-align: center;
+}
+
+.social-circle li a:hover i, .triggeredHover {
+	-moz-transform: rotate(360deg);
+	-webkit-transform: rotate(360deg);
+	-ms--transform: rotate(360deg);
+	transform: rotate(360deg);
+	-webkit-transition: all 0.2s;
+	-moz-transition: all 0.2s;
+	-o-transition: all 0.2s;
+	-ms-transition: all 0.2s;
+	transition: all 0.2s;
+}
+.social-circle i {
+	/*color: #fff;*/
+	-webkit-transition: all 0.8s;
+	-moz-transition: all 0.8s;
+	-o-transition: all 0.8s;
+	-ms-transition: all 0.8s;
+	transition: all 0.8s;
+}
+
+ ul.social-network {
+    list-style: none;
+    position: relative;
+    top: 100px;
+    right: auto;
+    bottom: 0px;
+    left: center;
+    margin-left: 0 !important;
+    padding: 0;
+}
+ul.social-network li {
+	display: inline;
+	margin: 0 5px;
+}

@@ -1,0 +1,12 @@
+body, html
+{
+	background-color: #EDEDED !important;
+}
+
+.intro
+{
+	text-align: center;
+	padding-top: 13%;
+	padding-bottom: 13%;
+	margin-bottom: 50px;
+}
