@@ -1,6 +1,18 @@
 <!DOCTYPE html>
   <html>
     <head>
+    	<script>
+
+    		 document.addEventListener('DOMContentLoaded', function() {
+    var elems = document.querySelectorAll('.fixed-action-btn');
+    var instance = M.FloatingActionButton.init(elems, {
+    	 direction: 'bottom',
+      hoverEnabled: false    
+    });
+  });
+
+    		
+    	</script>
       <!--Import Google Icon Font-->
       <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
       <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
@@ -20,14 +32,35 @@
 
     <body>
 
-      <!--JavaScript at end of body for optimized loading-->
-      <script type="text/javascript" src="js/materialize.min.js"></script>
+    	<!--Floating Action Code -->
+
+<div class="fixed-action-btn">
+  <a class="btn-floating btn-large waves-light">
+    <i class="large material-icons">menu</i>
+  </a>
+  <ul>
+    <li><a class="btn-floating red" href="images/profile.jpg"><i class="material-icons">person</i></a></li>
+    <li><a class="btn-floating yellow darken-1"><i class="material-icons">format_quote</i></a></li>
+    <li><a class="btn-floating green"><i class="material-icons">publish</i></a></li>
+    <li><a class="btn-floating blue" href="pdf/Resume.pdf"><i class="material-icons">attach_file</i></a></li>
+  </ul>
+</div>
+
+
+<!-- Floating Action Code -->
+
+
+
     
 
 
         <div class="container-fluid">
+
         <div class="container-fluid">
+
+
         <div class="intro Using red lighten-1 z-depth-3">
+
         <h1 class="grey-text text-lighten-5">Anvesh Rasamalla</h1>
 
 
@@ -151,7 +184,7 @@
     <div class="col s6 m2">
       <div class="card z-depth-3">
         <div class="card-image">
-          <img src="images/javascript.png" height="150">
+          <img src="images/Javascript.png" height="150">
         </div>
             
       </div>
@@ -168,7 +201,7 @@
 <div class="col s6 m2">
       <div class="card z-depth-3">
         <div class="card-image" >
-          <img src="images/java.jpg" height="150">
+          <img src="images/Java.png" height="150">
         </div>
             
       </div>
@@ -204,7 +237,7 @@
 <div class="col s6 m2">
       <div class="card">
         <div class="card-image">
-          <img src="images/spring.png" height="150">
+          <img src="images/Spring.png" height="150">
         </div>
      
       </div>
@@ -295,7 +328,7 @@
                                                                                       </ul>
           </div>
         <div class="card-panel white lighten-1 z-depth-3 y-depth-3 ">
-          <span class="red-text"><a href="https://Patrontequila.com" target="_blank">Patrón </a> is an AEM multi-region and multi-language website, the site houses graphics, campaigns, interactive quizzes for different campaigns and cognitive voice based recipe search using Alexa.</span>
+          <span class="red-text"><a href="https://Patrontequila.com" target="_blank">Patron </a> is an multi-region and multi-language website, the site houses graphics, campaigns, interactive quizzes for different campaigns and cognitive voice based recipe search using Alexa.</span>
         </div>
       </div>
     </div>
@@ -565,6 +598,8 @@
   </div>
 
 
+      <!--JavaScript at end of body for optimized loading-->
+      <script type="text/javascript" src="js/materialize.min.js"></script>
  </body>
 
 
@@ -572,7 +607,7 @@
 
     <div class="container-fluid">
     <footer class="page-footer red lighten-1 z-depth-3" style="text-align: center; padding-bottom: 15px;">            
-           <h7 style="text-align: center;"> © Designed & Developed by <b>Anvesh Rasamalla</b> - 2018 </h7>    
+           <h7 style="text-align: center;">&copy; Designed & Developed by <b>Anvesh Rasamalla</b> - 2018 </h7>    
         </footer>
         </div>
       </div>
