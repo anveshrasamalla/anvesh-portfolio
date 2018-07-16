@@ -3,7 +3,7 @@
     <head>
     	<script>
 
-    		 document.addEventListener('DOMContentLoaded', function() {
+    		 document.addEventListener('mouseover', function() {
     var elems = document.querySelectorAll('.fixed-action-btn');
     var instance = M.FloatingActionButton.init(elems, {
     	 direction: 'bottom',
@@ -30,7 +30,7 @@
       <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     </head>
 
-    <body>
+    <body onload="function()">
 
     	<!--Floating Action Code -->
 
