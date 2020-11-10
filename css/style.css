@@ -84,6 +84,17 @@ border-radius: 10px !important;
 margin-top: 30px !important;	
 }
 
+.card .card-title
+{
+    font-weight: 600!important;
+}
+
+.card .card-content p
+{
+    margin-top:50px!important;
+    margin-bottom:0px!important;
+}
+
 .col s12 m3 project-desc
 {
 	  border-radius: 10px;
@@ -178,3 +189,147 @@ ul.social-network li {
 position: absolute !important;
 top:50px;
 }
+
+
+.skills
+{
+    margin-top:50px;
+}
+
+
+ul.skills-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(140px, 250px));
+    margin: 60px 0px 0px 20px;
+    overflow: hidden;
+    list-style: none;
+}
+
+
+ ul.skills-list li {
+    position: relative;
+    margin-bottom: 10px;
+    padding-left: 20px;
+    font-family: var(--font-mono);
+    font-size: var(--fz-xs);
+}
+
+ul.skills-list li::before {
+    content: "\25B9";
+    position: absolute;
+    left: 0px;
+    color: var(--green);
+    font-size: var(--fz-sm);
+    //line-height: 12px;
+}
+
+.about p{
+margin: 0px  0px 15px;
+font-size: 16px;
+}
+
+
+.card-content a{
+    color: rgb(0, 0, 0);
+    //text-transform: uppercase;
+    text-decoration: none;
+    //letter-spacing: 0.15em;  
+    //display: inline-block;
+    //padding: 15px 20px;
+    position: relative;
+  }
+  .card-content a:after {    
+    background: none repeat scroll 0 0 transparent;
+    bottom: 0;
+    content: "";
+    display: block;
+    height: 2px;
+    left: 50%;
+    position: absolute;
+    background: rgb(0, 0, 0);
+    transition: width 0.3s ease 0s, left 0.3s ease 0s;
+    width: 0;
+  }
+  .card-content a:hover:after { 
+    width: 100%; 
+    left: 0; 
+  }
+
+  
+/*
+  .card-title a{
+    color: rgb(255, 255, 255);
+    //text-transform: uppercase;
+    text-decoration: none;
+    //letter-spacing: 0.15em;  
+    //display: inline-block;
+    //padding: 15px 20px;
+    position: relative;
+    cursor:pointer;
+  }
+  .card-content a:after {    
+    background: none repeat scroll 0 0 transparent;
+    bottom: 0;
+    content: "";
+    display: block;
+    height: 2px;
+    left: 50%;
+    position: absolute;
+    background: rgb(255, 255, 255);
+    transition: width 0.3s ease 0s, left 0.3s ease 0s;
+    width: 0;
+  }
+  .card-content a:hover:after { 
+    width: 100%; 
+    left: 0; 
+  }
+*/
+
+  .card-content .project-tech-list{
+  display: flex;
+  align-items: flex-end;
+  -webkit-box-flex: 1;
+  flex-grow: 1;
+  flex-wrap: wrap;
+  padding: 0px;
+  margin: 20px 0px 0px;
+  list-style: none;
+  }
+
+
+  .card-content .project-tech-list li {
+    font-family: monospace;
+    font-size: 13px;
+    line-height: 1.75;
+    margin-right:15px;
+}
+
+
+
+.card-content .range{
+color: #007bff;
+font-family:monospace;
+text-align: center;
+}
+
+.wave {
+    animation-name: wave-animation;  /* Refers to the name of your @keyframes element below */
+    animation-duration: 2.5s;        /* Change to speed up or slow down */
+    animation-iteration-count: infinite;  /* Never stop waving :) */
+    transform-origin: 70% 70%;       /* Pivot around the bottom-left palm */
+    display: inline-block;
+    font-size:2.0em;
+    width:40px;
+  }
+  
+  @keyframes wave-animation {
+      0% { transform: rotate( 0.0deg) }
+     10% { transform: rotate(14.0deg) }  /* The following five values can be played with to make the waving more or less extreme */
+     20% { transform: rotate(-8.0deg) }
+     30% { transform: rotate(14.0deg) }
+     40% { transform: rotate(-4.0deg) }
+     50% { transform: rotate(10.0deg) }
+     60% { transform: rotate( 0.0deg) }  /* Reset for the last half to pause */
+    100% { transform: rotate( 0.0deg) }
+  }
+  
