@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0"
+    jcr:primaryType="sling:OsgiConfig"
+    sfmc_auth_base="https://mcwwxntrfl-kg2xh-7xzn4hr4qzm.auth.marketingcloudapis.com"
+    sfmc_rest_base="https://mcwwxntrfl-kg2xh-7xzn4hr4qzm.rest.marketingcloudapis.com"
+    sfmc_client_id="ujsscvkxhfxoaactgjbhwbeh"
+    sfmc_client_secret="8Ll6fHQkHVhV4s7DSXtwJYVU"
+    sfmc_account_id="94856ff2-9686-49d3-b4cf-b1ff939a152c"
+    sfmc_default_de_key="AEM-FORM-ENDPNT-INTRNL-TEST"
+    greCAPTCHA_secretKey="YOUR_RECAPTCHA_SECRET_KEY"
+    timeout_ms="10000"
+    debug_logs="{Boolean}true" />

@@ -1,0 +1,40 @@
+<!-- /apps/axp-common/components/form/sfmc-form/sfmc-form.html -->
+<div class="sfmc-form" data-component="sfmc-form" data-servlet="/bin/wcm/sfmc">
+  <form id="sfmcForm" method="post" novalidate>
+    <input type="hidden" name="aemformid" value="1001" />
+
+    <div class="field">
+      <label>First Name*</label>
+      <input type="text" name="FirstName" required />
+    </div>
+
+    <div class="field">
+      <label>Last Name*</label>
+      <input type="text" name="LastName" required />
+    </div>
+
+    <div class="field">
+      <label>Email*</label>
+      <input type="email" name="Email" required />
+    </div>
+
+    <div class="field">
+      <label>Phone</label>
+      <input type="text" name="Phone" />
+    </div>
+
+    <div class="field">
+      <label>State</label>
+      <input type="text" name="State" maxlength="2" />
+    </div>
+
+    <div class="g-recaptcha" data-sitekey="${properties.recaptchaSiteKey @ context='unsafe'}"></div>
+
+    <button type="submit" class="btn">Submit</button>
+
+    <div id="sfmcStatus" class="sfmc-status" aria-live="polite"></div>
+  </form>
+</div>
+
+<!-- Include clientlib -->
+<cq:includeClientLib categories="axp.sfmc.form"/>

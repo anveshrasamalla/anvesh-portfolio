@@ -1,0 +1,50 @@
+.sfmc-form {
+  max-width: 600px;
+  margin: 1rem auto;
+  padding: 1rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.sfmc-form .field {
+  margin-bottom: 12px;
+}
+
+.sfmc-form label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.sfmc-form input {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.sfmc-status {
+  margin-top: 10px;
+  font-size: 0.9rem;
+}
+
+.sfmc-status.success {
+  color: green;
+}
+
+.sfmc-status.error {
+  color: red;
+}
+
+.btn {
+  background: #0066cc;
+  color: #fff;
+  padding: 8px 14px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.btn:hover {
+  background: #004999;
+}
