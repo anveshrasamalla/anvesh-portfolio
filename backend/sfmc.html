@@ -1,157 +1,125 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>SFMC Form Test</title>
-<style>
-  body {
-    font-family: Arial, sans-serif;
-    background: #fafafa;
-    margin: 40px auto;
-    max-width: 600px;
-    padding: 20px;
-    border-radius: 10px;
-    border: 1px solid #ddd;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-  }
-  h2 {
-    text-align: center;
-    color: #333;
-  }
-  form div {
-    margin-bottom: 12px;
-  }
-  label {
-    display: block;
-    font-weight: bold;
-    margin-bottom: 4px;
-  }
-  input {
-    width: 100%;
-    padding: 8px;
-    box-sizing: border-box;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-  }
-  button {
-    background: #0070d2;
-    color: white;
-    border: none;
-    padding: 10px 16px;
-    border-radius: 4px;
-    cursor: pointer;
-  }
-  button:hover {
-    background: #005bb5;
-  }
-  #status {
-    margin-top: 15px;
-    font-weight: bold;
-    text-align: center;
-  }
-</style>
-
-<!-- ⚠️ Replace with your actual reCAPTCHA v3 site key -->
-<script src="https://www.google.com/recaptcha/api.js?render=YOUR_PUBLIC_SITE_KEY"></script>
+  <meta charset="UTF-8" />
+  <title>SFMC Test Form</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      background: #f9fafb;
+      color: #111;
+      padding: 2rem;
+    }
+    h1 {
+      color: #0073e6;
+    }
+    form {
+      background: #fff;
+      padding: 1.5rem;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      max-width: 480px;
+    }
+    label { display:block; margin-top: 1rem; }
+    input, textarea {
+      width:100%;
+      padding:0.5rem;
+      border:1px solid #ccc;
+      border-radius:4px;
+    }
+    button {
+      margin-top:1.5rem;
+      background:#0073e6;
+      color:white;
+      border:none;
+      padding:0.75rem 1.5rem;
+      border-radius:4px;
+      cursor:pointer;
+    }
+    pre {
+      background:#111;
+      color:#0f0;
+      padding:1rem;
+      border-radius:8px;
+      overflow:auto;
+      margin-top:2rem;
+    }
+  </style>
+  <script src="https://www.google.com/recaptcha/api.js?render=YOUR_SITE_KEY"></script>
 </head>
-
 <body>
-<h2>SFMC Form Test</h2>
+  <h1>SFMC Integration Test Form</h1>
+  <form id="sfmcForm">
+    <label>First Name
+      <input type="text" name="FirstName" required />
+    </label>
+    <label>Last Name
+      <input type="text" name="LastName" required />
+    </label>
+    <label>Email
+      <input type="email" name="Email" required />
+    </label>
+    <label>Message
+      <textarea name="Message"></textarea>
+    </label>
+    <button type="submit">Submit</button>
+  </form>
 
-<form id="sfmcForm" method="post" novalidate>
-  <input type="hidden" name="FormID" value="EducationTestForm">
+  <pre id="result">Awaiting submission...</pre>
 
-  <div>
-    <label>First Name *</label>
-    <input type="text" name="FirstName" required value="John">
-  </div>
-  <div>
-    <label>Last Name *</label>
-    <input type="text" name="LastName" required value="Doe">
-  </div>
-  <div>
-    <label>Email *</label>
-    <input type="email" name="Email" required value="john.doe@example.com">
-  </div>
-  <div>
-    <label>Phone</label>
-    <input type="text" name="Phone" value="(555) 123-4567">
-  </div>
-  <div>
-    <label>State</label>
-    <input type="text" name="State" value="NY">
-  </div>
+  <script>
+    const form = document.getElementById('sfmcForm');
+    const resultBox = document.getElementById('result');
+    const RECAPTCHA_KEY = 'YOUR_SITE_KEY'; // replace with your key
 
-  <button type="submit">Submit</button>
-  <div id="status"></div>
-</form>
-
-<script>
-(function(){
-  const form = document.getElementById("sfmcForm");
-  const statusEl = document.getElementById("status");
-  const siteKey = "YOUR_PUBLIC_SITE_KEY"; // replace with your key
-  const servletURL = "/bin/wcm/sfmc";    // AEM servlet path
-
-  form.addEventListener("submit", function(e){
-    e.preventDefault();
-    statusEl.textContent = "Submitting...";
-    statusEl.style.color = "#333";
-
-    if (typeof grecaptcha === "undefined") {
-      submitForm(""); // fallback (no recaptcha)
-    } else {
-      grecaptcha.ready(function(){
-        grecaptcha.execute(siteKey, {action: "submit"})
-          .then(function(token){
-            submitForm(token);
-          })
-          .catch(function(){
-            submitForm("");
-          });
-      });
-    }
-  });
-
-  function submitForm(token) {
-    if (token) {
-      const hidden = document.createElement("input");
-      hidden.type = "hidden";
-      hidden.name = "g-recaptcha-response";
-      hidden.value = token;
-      form.appendChild(hidden);
-    }
-
-    const formData = new URLSearchParams(new FormData(form));
-
-    fetch(servletURL, {
-      method: "POST",
-      headers: {"Accept": "application/json"},
-      credentials: "same-origin",
-      body: formData
-    })
-    .then(res => res.text().then(t => ({ok: res.ok, text: t})))
-    .then(r => {
-      let data = {};
-      try { data = JSON.parse(r.text); } catch(e) { data = {message: r.text, error: true}; }
-
-      if (!r.ok || data.error) {
-        statusEl.textContent = "❌ Error: " + (data.message || "Submission failed");
-        statusEl.style.color = "red";
-      } else {
-        statusEl.textContent = "✅ Success: " + (data.message || "Submitted");
-        statusEl.style.color = "green";
-        form.reset();
+    async function getCSRF() {
+      try {
+        const r = await fetch('/libs/granite/csrf/token.json', { credentials:'include' });
+        const d = await r.json();
+        return d.token;
+      } catch (e) {
+        console.warn('CSRF token fetch failed', e);
+        return '';
       }
-      console.log("SFMC response:", data);
-    })
-    .catch(err => {
-      statusEl.textContent = "❌ Network error: " + err.message;
-      statusEl.style.color = "red";
-    });
-  }
-})();
-</script>
+    }
 
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      resultBox.textContent = 'Submitting…';
+
+      const formData = new FormData(form);
+      const data = {};
+      formData.forEach((v, k) => data[k] = v);
+
+      try {
+        // Step 1: get reCAPTCHA token
+        const token = await grecaptcha.execute(RECAPTCHA_KEY, { action: 'submit' });
+        data['g-recaptcha-response'] = token;
+
+        // Step 2: get AEM CSRF
+        const csrf = await getCSRF();
+
+        // Step 3: send to your servlet
+        const res = await fetch('/bin/wcm/sfmc', {
+          method: 'POST',
+          headers: {
+            'CSRF-Token': csrf,
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+          },
+          body: new URLSearchParams(data)
+        });
+
+        const text = await res.text();
+        let json;
+        try { json = JSON.parse(text); } catch { json = { raw: text }; }
+
+        resultBox.textContent = JSON.stringify(json, null, 2);
+      } catch (err) {
+        console.error(err);
+        resultBox.textContent = 'Error: ' + err.message;
+      }
+    });
+  </script>
 </body>
 </html>
