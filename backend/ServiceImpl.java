@@ -11,7 +11,6 @@ import org.apache.sling.api.request.RequestParameterMap;
 import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Modified;
-import org.osgi.service.component.annotations.Reference;
 import org.osgi.service.metatype.annotations.AttributeDefinition;
 import org.osgi.service.metatype.annotations.Designate;
 import org.osgi.service.metatype.annotations.ObjectClassDefinition;
@@ -29,10 +28,7 @@ import java.util.UUID;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-@Component(
-        service = SfmcService.class,
-        immediate = true
-)
+@Component(service = SfmcService.class, immediate = true)
 @Designate(ocd = SfmcServiceImpl.Config.class)
 public class SfmcServiceImpl implements SfmcService {
 
@@ -60,7 +56,7 @@ public class SfmcServiceImpl implements SfmcService {
         boolean debug_logs();
     }
 
-    // OSGi config values
+    // OSGi config
     private String authBase;
     private String restBase;
     private String clientId;
@@ -71,48 +67,46 @@ public class SfmcServiceImpl implements SfmcService {
     private boolean debug;
 
     // Utilities
-    private ApiClient apiClient = new ApiClient(); // your existing HTTP helper
+    private ApiClient apiClient = new ApiClient();
 
-    /** For testing/injection if needed */
+    /** allow test injection */
     public void setApiClient(ApiClient apiClient) { this.apiClient = apiClient; }
 
-    @Activate
-    @Modified
+    @Activate @Modified
     protected void activate(Config c) {
-        this.authBase       = trim(c.sfmc_auth_base());
-        this.restBase       = trim(c.sfmc_rest_base());
-        this.clientId       = c.sfmc_client_id();
-        this.clientSecret   = c.sfmc_client_secret();
-        this.accountId      = c.sfmc_account_id();
-        this.defaultDeKey   = c.sfmc_default_de_key();
-        this.recaptchaSecret= c.recaptcha_secret();
-        this.debug          = c.debug_logs();
+        this.authBase        = trim(c.sfmc_auth_base());
+        this.restBase        = trim(c.sfmc_rest_base());
+        this.clientId        = c.sfmc_client_id();
+        this.clientSecret    = c.sfmc_client_secret();
+        this.accountId       = c.sfmc_account_id();
+        this.defaultDeKey    = c.sfmc_default_de_key();
+        this.recaptchaSecret = c.recaptcha_secret();
+        this.debug           = c.debug_logs();
 
-        LOG.info("SFMC Service ready. AUTH={}, REST={}, DE={}, Debug={}",
+        LOG.info("SFMC Service active. AUTH={}, REST={}, DE={}, Debug={}",
                 authBase, restBase, defaultDeKey, debug);
     }
 
-    private String trim(String s) {
-        return (s != null && s.endsWith("/")) ? s.substring(0, s.length() - 1) : s;
-    }
+    private String trim(String s) { return (s != null && s.endsWith("/")) ? s.substring(0, s.length() - 1) : s; }
 
     // ---------------- Main ----------------
-
     @Override
     public SalesforceResponse submitToSfmc(RequestParameterMap params, HttpServletRequest request) throws IOException {
         SalesforceResponse out = new SalesforceResponse();
         final String submissionId = UUID.randomUUID().toString();
 
-        // reCAPTCHA score (uses your utility)
+        // 1) reCAPTCHA score
         double score = getCaptchaScore(params, request);
         out.score = score;
         LOG.info("reCAPTCHA score={}", score);
 
-        // Build SFMC payload from request params
+        // 2) Build payload
         JSONObject payload = buildPayload(params, submissionId, score);
 
-        // Auth then post
+        // 3) OAuth2
         String token = getToken();
+
+        // 4) Submit rows
         boolean ok = postRows(token, payload);
 
         out.error = !ok;
@@ -121,16 +115,15 @@ public class SfmcServiceImpl implements SfmcService {
     }
 
     // ---------------- Helpers ----------------
-
     private double getCaptchaScore(RequestParameterMap params, HttpServletRequest req) {
         try {
-            RequestParameter p = params.getValue("g-recaptcha-response");
-            String token = (p != null) ? p.getString() : "";
+            RequestParameter r = params.getValue("g-recaptcha-response");
+            String token = (r != null) ? r.getString() : "";
             if (StringUtils.isBlank(token)) {
                 LOG.warn("Missing g-recaptcha-response");
                 return 0.0d;
             }
-            // Your Recaptcha utility signature: (secretKey, publicKey, token, request)
+            // EXACT signature: (secretKey, publicKey, token, request)
             return Recaptcha.isCaptchaValid(recaptchaSecret, "", token, req);
         } catch (Exception e) {
             LOG.error("reCAPTCHA validation error", e);
@@ -149,7 +142,7 @@ public class SfmcServiceImpl implements SfmcService {
         JsonObject res = apiClient.makeApiCall("POST", url, body, Collections.<String,String>emptyMap());
         if (res != null && res.has("access_token")) {
             String token = res.get("access_token").getAsString();
-            if (debug) LOG.debug("SFMC auth success. token length={}", token != null ? token.length() : 0);
+            if (debug) LOG.debug("SFMC auth OK. token length={}", (token != null ? token.length() : 0));
             return token;
         }
         throw new RuntimeException("SFMC auth failed: " + String.valueOf(res));
@@ -162,7 +155,6 @@ public class SfmcServiceImpl implements SfmcService {
         headers.put("Authorization", "Bearer " + token);
         headers.put("Content-Type", "application/json");
 
-        // Convert org.json -> gson
         JsonObject gsonPayload = new JsonParser().parse(payload.toString()).getAsJsonObject();
         JsonObject res = apiClient.makeApiCall("POST", url, gsonPayload, headers);
 
@@ -190,11 +182,11 @@ public class SfmcServiceImpl implements SfmcService {
         item.put("TimeStamp", ZonedDateTime.now().toString());
         item.put("MessageBody", "Submitted via AEM " + ZonedDateTime.now());
 
-        JSONArray items = new JSONArray();
-        items.put(item);
+        JSONArray arr = new JSONArray();
+        arr.put(item);
 
         JSONObject payload = new JSONObject();
-        payload.put("items", items);
+        payload.put("items", arr);
         return payload;
     }
 

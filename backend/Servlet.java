@@ -15,14 +15,11 @@ import javax.servlet.Servlet;
 import java.io.IOException;
 import java.io.PrintWriter;
 
-/**
- * Simple entry: POST /bin/wcm/sfmc
- * Sends request params to service and returns compact JSON.
- */
+/** POST /bin/wcm/sfmc */
 @Component(
         service = Servlet.class,
         property = {
-                Constants.SERVICE_DESCRIPTION + "=SFMC Servlet (Simple Direct Post)",
+                Constants.SERVICE_DESCRIPTION + "=SFMC Servlet (Direct Post)",
                 "sling.servlet.methods=" + HttpConstants.METHOD_POST,
                 "sling.servlet.paths=/bin/wcm/sfmc"
         }
@@ -30,7 +27,7 @@ import java.io.PrintWriter;
 public class SfmcServlet extends SlingAllMethodsServlet {
 
     @Reference private transient SfmcService sfmcService;
-    @Reference private transient XSSFilter xssFilter;
+    @Reference private transient XSSFilter xss;
 
     @Override
     protected void doPost(final SlingHttpServletRequest req,
@@ -51,8 +48,7 @@ public class SfmcServlet extends SlingAllMethodsServlet {
         res.setStatus(r.error ? 500 : 200);
 
         PrintWriter w = res.getWriter();
-        // sanitize just in case (though JSON values are ours)
-        w.write(xssFilter.filter(json.toString()).replace("&quot;", "\""));
+        w.write(xss.filter(json.toString()).replace("&quot;", "\""));
         w.flush();
     }
 }
