@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SFMC Form Test</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    background: #fafafa;
+    margin: 40px auto;
+    max-width: 600px;
+    padding: 20px;
+    border-radius: 10px;
+    border: 1px solid #ddd;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  }
+  h2 {
+    text-align: center;
+    color: #333;
+  }
+  form div {
+    margin-bottom: 12px;
+  }
+  label {
+    display: block;
+    font-weight: bold;
+    margin-bottom: 4px;
+  }
+  input {
+    width: 100%;
+    padding: 8px;
+    box-sizing: border-box;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+  }
+  button {
+    background: #0070d2;
+    color: white;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  button:hover {
+    background: #005bb5;
+  }
+  #status {
+    margin-top: 15px;
+    font-weight: bold;
+    text-align: center;
+  }
+</style>
+
+<!-- ⚠️ Replace with your actual reCAPTCHA v3 site key -->
+<script src="https://www.google.com/recaptcha/api.js?render=YOUR_PUBLIC_SITE_KEY"></script>
+</head>
+
+<body>
+<h2>SFMC Form Test</h2>
+
+<form id="sfmcForm" method="post" novalidate>
+  <input type="hidden" name="FormID" value="EducationTestForm">
+
+  <div>
+    <label>First Name *</label>
+    <input type="text" name="FirstName" required value="John">
+  </div>
+  <div>
+    <label>Last Name *</label>
+    <input type="text" name="LastName" required value="Doe">
+  </div>
+  <div>
+    <label>Email *</label>
+    <input type="email" name="Email" required value="john.doe@example.com">
+  </div>
+  <div>
+    <label>Phone</label>
+    <input type="text" name="Phone" value="(555) 123-4567">
+  </div>
+  <div>
+    <label>State</label>
+    <input type="text" name="State" value="NY">
+  </div>
+
+  <button type="submit">Submit</button>
+  <div id="status"></div>
+</form>
+
+<script>
+(function(){
+  const form = document.getElementById("sfmcForm");
+  const statusEl = document.getElementById("status");
+  const siteKey = "YOUR_PUBLIC_SITE_KEY"; // replace with your key
+  const servletURL = "/bin/wcm/sfmc";    // AEM servlet path
+
+  form.addEventListener("submit", function(e){
+    e.preventDefault();
+    statusEl.textContent = "Submitting...";
+    statusEl.style.color = "#333";
+
+    if (typeof grecaptcha === "undefined") {
+      submitForm(""); // fallback (no recaptcha)
+    } else {
+      grecaptcha.ready(function(){
+        grecaptcha.execute(siteKey, {action: "submit"})
+          .then(function(token){
+            submitForm(token);
+          })
+          .catch(function(){
+            submitForm("");
+          });
+      });
+    }
+  });
+
+  function submitForm(token) {
+    if (token) {
+      const hidden = document.createElement("input");
+      hidden.type = "hidden";
+      hidden.name = "g-recaptcha-response";
+      hidden.value = token;
+      form.appendChild(hidden);
+    }
+
+    const formData = new URLSearchParams(new FormData(form));
+
+    fetch(servletURL, {
+      method: "POST",
+      headers: {"Accept": "application/json"},
+      credentials: "same-origin",
+      body: formData
+    })
+    .then(res => res.text().then(t => ({ok: res.ok, text: t})))
+    .then(r => {
+      let data = {};
+      try { data = JSON.parse(r.text); } catch(e) { data = {message: r.text, error: true}; }
+
+      if (!r.ok || data.error) {
+        statusEl.textContent = "❌ Error: " + (data.message || "Submission failed");
+        statusEl.style.color = "red";
+      } else {
+        statusEl.textContent = "✅ Success: " + (data.message || "Submitted");
+        statusEl.style.color = "green";
+        form.reset();
+      }
+      console.log("SFMC response:", data);
+    })
+    .catch(err => {
+      statusEl.textContent = "❌ Network error: " + err.message;
+      statusEl.style.color = "red";
+    });
+  }
+})();
+</script>
+
+</body>
+</html>
