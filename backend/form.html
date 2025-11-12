@@ -1,55 +1,191 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en">
 <head>
-  <title>SFMC Form Test</title>
-  <script src="https://www.google.com/recaptcha/api.js?render=YOUR_SITE_KEY"></script>
+  <meta charset="utf-8"/>
+  <title>SFMC Form – AEM Test</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <style>
+    :root { --bg:#0b0b0c; --card:#101114; --text:#e6e7eb; --muted:#9aa3ad; --accent:#6ea8fe; --ok:#29c070; --err:#ff6b6b; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+    .wrap { max-width:720px; margin:40px auto; padding:20px; }
+    .card { background:var(--card); border:1px solid #1f2126; border-radius:12px; padding:20px; box-shadow: 0 10px 24px rgba(0,0,0,.25); }
+    h1 { margin:0 0 14px; font-size:20px; }
+    p.hint { margin:0 0 18px; color:var(--muted); }
+    .grid { display:grid; grid-template-columns:repeat(2, 1fr); gap:12px; }
+    .grid > .full { grid-column:1 / -1; }
+    label { display:block; font-weight:600; margin:4px 0 6px; }
+    input, textarea, select {
+      width:100%; padding:10px 12px; border-radius:8px; border:1px solid #2a2d33; background:#0e0f12; color:var(--text);
+      outline:none; transition:border .15s ease, box-shadow .15s ease;
+    }
+    input:focus, textarea:focus, select:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(110,168,254,.15) }
+    button {
+      appearance:none; border:0; border-radius:10px; padding:12px 16px; background:var(--accent); color:#081120; font-weight:700; cursor:pointer;
+      transition: transform .05s ease, filter .2s ease; 
+    }
+    button:disabled { filter:grayscale(.5) brightness(.8); cursor:not-allowed; }
+    button:active { transform: translateY(1px); }
+    .row { display:flex; gap:10px; align-items:center; justify-content:flex-start; }
+    .status { margin-top:14px; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; background:#0a0b0d; border:1px solid #21242a; border-radius:8px; padding:12px; white-space:pre-wrap; }
+    .status.ok { border-color:#204d39; background:#0a130f; color:#b9f0d2; }
+    .status.err { border-color:#4d1f20; background:#130a0a; color:#ffbcbc; }
+    small.note { color:var(--muted); display:block; margin-top:6px; }
+  </style>
+
+  <!-- reCAPTCHA v3 -->
+  <script src="https://www.google.com/recaptcha/api.js?render=YOUR_RECAPTCHA_SITE_KEY" async defer></script>
 </head>
-<body style="font-family:Arial;max-width:600px;margin:30px auto;">
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>SFMC Form – AEM Test</h1>
+      <p class="hint">Submits to <code>/bin/wcm/sfmc</code>, gets CSRF, executes reCAPTCHA v3 and displays <code>{message,error,httpCode,requestId}</code>.</p>
 
-  <h2>SFMC Test Form</h2>
-  <form id="sfmcForm" action="/bin/wcm/sfmc" method="POST">
-    <input type="hidden" name="deKey" value="AEM-FORM-ENDPNT-INTRNL-TEST">
-    <input type="hidden" id="MessageBody" name="MessageBody">
+      <form id="sfmcForm" action="/bin/wcm/sfmc" method="POST" novalidate>
+        <!-- Required by your backend (we default it here, can be edited) -->
+        <input type="hidden" name="deKey" value="AEM-FORM-ENDPNT-INTRNL-TEST">
+        <input type="hidden" id="MessageBody" name="MessageBody">
 
-    <label>Form ID: <input name="FormID" value="TestForm"></label><br>
-    <label>Email: <input name="Email" type="email" value="john@example.com"></label><br>
-    <label>First Name: <input name="FirstName" value="John"></label><br>
-    <label>Last Name: <input name="LastName" value="Doe"></label><br><br>
+        <div class="grid">
+          <div>
+            <label>FormID</label>
+            <input name="FormID" value="TestForm"/>
+          </div>
+          <div>
+            <label>Email</label>
+            <input name="Email" type="email" value="john@example.com" required/>
+          </div>
 
-    <button type="submit">Submit</button>
-  </form>
+          <div>
+            <label>FirstName</label>
+            <input name="FirstName" value="John"/>
+          </div>
+          <div>
+            <label>LastName</label>
+            <input name="LastName" value="Doe"/>
+          </div>
 
-  <pre id="result" style="background:#f7f7f7;padding:10px;margin-top:10px;"></pre>
+          <div class="full">
+            <label>Comments</label>
+            <textarea name="Comments" rows="3" placeholder="Optional comments..."></textarea>
+          </div>
+
+          <div class="row full">
+            <button id="submitBtn" type="submit">Submit</button>
+            <small class="note">We’ll build a human-readable <code>MessageBody</code> on submit.</small>
+          </div>
+        </div>
+      </form>
+
+      <pre id="status" class="status">Waiting…</pre>
+    </div>
+  </div>
 
   <script>
-    const form = document.getElementById("sfmcForm");
-    form.addEventListener("submit", function(e) {
-      e.preventDefault();
+    (function () {
+      const form = document.getElementById('sfmcForm');
+      const submitBtn = document.getElementById('submitBtn');
+      const statusBox = document.getElementById('status');
+      const siteKey = 'YOUR_RECAPTCHA_SITE_KEY';
 
-      const msg = Array.from(form.querySelectorAll("input"))
-        .filter(i => i.type !== "hidden")
-        .map(i => `${i.name}: ${i.value}`)
-        .join("\r\n");
-      document.getElementById("MessageBody").value = msg;
+      // ---- Helpers ---------------------------------------------------------
+      const padLabel = (s, w) => (s + ':').padEnd(w, ' ');
+      const isHiddenOrEmpty = (el) => el.type === 'hidden' || el.name === '' || el.disabled;
 
-      grecaptcha.ready(() => {
-        grecaptcha.execute('YOUR_SITE_KEY', {action:'submit'}).then(token => {
-          const fd = new FormData(form);
-          fd.append("g-recaptcha-response", token);
+      function buildMessageBody(form) {
+        // Build a compact, readable MessageBody from visible inputs & textareas
+        const parts = [];
+        const fields = form.querySelectorAll('input, textarea, select');
+        Array.prototype.forEach.call(fields, function (el) {
+          if (isHiddenOrEmpty(el)) return;
+          const label = el.name || el.id || 'field';
+          const val = (el.value || '').toString().trim();
+          if (val !== '') parts.push(padLabel(label, 18) + val);
+        });
+        return parts.join('\r\n');
+      }
 
-          fetch(form.action, {method: "POST", body: fd})
-            .then(res => res.json())
-            .then(data => {
-              document.getElementById("result").textContent =
-                `Message: ${data.message}\nError: ${data.error}\nStatus: ${data.httpCode}\nRequest ID: ${data.requestId}`;
-            })
-            .catch(err => {
-              document.getElementById("result").textContent = "Error: " + err;
+      async function getCsrfToken() {
+        try {
+          const r = await fetch('/libs/granite/csrf/token.json', { credentials: 'same-origin' });
+          if (!r.ok) return null;
+          const j = await r.json();
+          return j.token || null;
+        } catch (e) {
+          return null;
+        }
+      }
+
+      function setStatus(kind, textObj) {
+        statusBox.classList.remove('ok', 'err');
+        if (kind === 'ok') statusBox.classList.add('ok');
+        if (kind === 'err') statusBox.classList.add('err');
+        statusBox.textContent = (typeof textObj === 'string') ? textObj : JSON.stringify(textObj, null, 2);
+      }
+
+      function withTimeout(ms) {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), ms);
+        return { signal: ctrl.signal, cancel: () => clearTimeout(t) };
+      }
+
+      // ---- Submit ----------------------------------------------------------
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+
+        // Build and set MessageBody before posting
+        document.getElementById('MessageBody').value = buildMessageBody(form);
+
+        submitBtn.disabled = true;
+        setStatus('', 'Submitting…');
+
+        // Get CSRF first (helps on author)
+        Promise.resolve(getCsrfToken()).then(function (csrf) {
+          // Execute reCAPTCHA v3
+          grecaptcha.ready(function () {
+            grecaptcha.execute(siteKey, { action: 'submit' }).then(function (recaptchaToken) {
+              const fd = new FormData(form);
+              fd.append('g-recaptcha-response', recaptchaToken);
+
+              const t = withTimeout(20000); // 20s safety
+              fetch(form.action, {
+                method: 'POST',
+                body: fd,
+                headers: csrf ? { 'CSRF-Token': csrf } : {},
+                credentials: 'same-origin',
+                signal: t.signal
+              })
+              .then(async function (res) {
+                t.cancel();
+                let data;
+                try {
+                  data = await res.json();
+                } catch (err) {
+                  // non-JSON error page
+                  const txt = await res.text();
+                  throw new Error('Non-JSON response: ' + txt.slice(0, 300));
+                }
+
+                // Expecting: { message, error, httpCode, requestId }
+                if (data && data.error === false) {
+                  setStatus('ok', data);
+                } else {
+                  setStatus('err', data || { message: 'Unknown error', error: true });
+                }
+              })
+              .catch(function (err) {
+                const msg = (err && err.name === 'AbortError') ? 'Request timed out' : (err && err.message) || String(err);
+                setStatus('err', { message: msg, error: true });
+              })
+              .finally(function () {
+                submitBtn.disabled = false;
+              });
             });
+          });
         });
       });
-    });
+    })();
   </script>
-
 </body>
 </html>
