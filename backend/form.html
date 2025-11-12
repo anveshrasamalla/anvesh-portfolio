@@ -1,159 +1,110 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>SFMC Local Test Form</title>
+  <meta charset="utf-8"/>
+  <title>SFMC Form – Prod Test</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <style>
-    body {
-      font-family: system-ui, Arial, sans-serif;
-      background: #f8fafc;
-      color: #111;
-      padding: 40px;
-    }
-    form {
-      background: #fff;
-      border: 1px solid #e2e8f0;
-      border-radius: 10px;
-      padding: 24px;
-      max-width: 720px;
-      margin: 0 auto;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-    }
-    h2 {
-      margin-top: 0;
-      font-size: 20px;
-      color: #2563eb;
-    }
-    label {
-      display: block;
-      margin-bottom: 12px;
-      font-weight: 500;
-    }
-    input, textarea {
-      width: 100%;
-      padding: 8px 10px;
-      border: 1px solid #cbd5e1;
-      border-radius: 6px;
-      font-size: 15px;
-      box-sizing: border-box;
-    }
-    textarea {
-      resize: vertical;
-    }
-    button {
-      background: #2563eb;
-      color: white;
-      border: 0;
-      border-radius: 6px;
-      padding: 10px 16px;
-      font-size: 15px;
-      cursor: pointer;
-      margin-top: 10px;
-    }
-    button:disabled {
-      background: #94a3b8;
-    }
-    pre {
-      margin-top: 20px;
-      background: #0b1020;
-      color: #c8e1ff;
-      padding: 14px;
-      border-radius: 8px;
-      overflow-x: auto;
-      font-size: 13px;
-    }
+    body { font-family: system-ui, Arial, sans-serif; background:#f7fafc; margin:0; padding:40px; }
+    .card { max-width:720px; margin:0 auto; background:#fff; border:1px solid #e2e8f0; border-radius:10px; padding:20px; box-shadow:0 2px 8px rgba(0,0,0,.05); }
+    h1 { margin:0 0 12px; font-size:20px; color:#2563eb; }
+    label { display:block; margin:10px 0 6px; font-weight:600; }
+    input, textarea { width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:6px; font-size:14px; }
+    button { margin-top:12px; background:#2563eb; color:#fff; border:0; border-radius:6px; padding:10px 16px; cursor:pointer; }
+    pre { margin-top:14px; background:#0b1020; color:#c8e1ff; padding:12px; border-radius:8px; overflow:auto; font-size:13px; }
   </style>
+  <!-- reCAPTCHA v3 -->
+  <script src="https://www.google.com/recaptcha/api.js?render=YOUR_RECAPTCHA_SITE_KEY" async defer></script>
 </head>
 <body>
+  <div class="card">
+    <h1>SFMC Submission Test</h1>
+    <form id="sfmcForm" action="/bin/wcm/sfmc" method="POST" novalidate>
+      <!-- You can override this from component dialog if needed -->
+      <input type="hidden" name="de_key" value="AEM-FORM-ENDPNT-INTRNL-TEST">
+      <input type="hidden" name="MessageBody" id="MessageBody">
 
-  <form id="sfmcForm">
-    <h2>SFMC Form Submission Test</h2>
+      <label>FormID
+        <input name="FormID" value="education not for profit">
+      </label>
+      <label>Email
+        <input name="Email" type="email" value="john@example.com">
+      </label>
+      <label>FirstName
+        <input name="FirstName" value="John">
+      </label>
+      <label>LastName
+        <input name="LastName" value="Doe">
+      </label>
+      <label>Comments
+        <textarea name="Comments" rows="3">Optional comments…</textarea>
+      </label>
 
-    <input type="hidden" name="de_key" value="AEM-FORM-ENDPNT-INTRNL-TEST">
-    <input type="hidden" name="aemformid" value="local-test-form">
-    <input type="hidden" name="g-recaptcha-response" value="dummy-for-local">
+      <button id="submitBtn" type="submit">Submit</button>
+    </form>
 
-    <label>
-      First Name
-      <input type="text" name="FirstName" value="Test">
-    </label>
-
-    <label>
-      Last Name
-      <input type="text" name="LastName" value="User">
-    </label>
-
-    <label>
-      Email
-      <input type="email" name="Email" value="test.user@example.com">
-    </label>
-
-    <label>
-      Phone
-      <input type="text" name="Phone" value="(555) 000-0000">
-    </label>
-
-    <label>
-      State
-      <input type="text" name="State" value="NY">
-    </label>
-
-    <label>
-      Form ID
-      <input type="text" name="FormID" value="education not for profit">
-    </label>
-
-    <label>
-      Message Body
-      <textarea name="MessageBody" rows="5">Testing SFMC form submission from local environment.</textarea>
-    </label>
-
-    <button id="submitBtn" type="submit">Submit</button>
-
-    <pre id="sfmcOut">Waiting for submission...</pre>
-  </form>
+    <pre id="out">Waiting…</pre>
+  </div>
 
   <script>
-  (function() {
+  (function () {
     const form = document.getElementById('sfmcForm');
-    const out = document.getElementById('sfmcOut');
-    const btn = document.getElementById('submitBtn');
+    const out  = document.getElementById('out');
+    const btn  = document.getElementById('submitBtn');
+    const siteKey = 'YOUR_RECAPTCHA_SITE_KEY';
 
-    function show(data) {
-      out.textContent = JSON.stringify(data, null, 2);
+    function setOut(o){ out.textContent = (typeof o==='string') ? o : JSON.stringify(o, null, 2); }
+
+    function buildMessageBody(form) {
+      const parts = [];
+      const fields = form.querySelectorAll('input, textarea, select');
+      for (var i=0;i<fields.length;i++) {
+        var el = fields[i];
+        if (!el.name || el.type === 'hidden') continue;
+        var v = (el.value || '').trim();
+        if (v) parts.push((el.name + ':').padEnd(18, ' ') + v);
+      }
+      return parts.join('\r\n');
     }
 
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      btn.disabled = true;
-      btn.textContent = 'Submitting...';
-      out.textContent = 'Submitting...';
-
+    async function getCsrf() {
       try {
-        const formData = new URLSearchParams(new FormData(form)).toString();
-        const response = await fetch('/bin/wcm/sfmc', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
-          body: formData
-        });
+        const r = await fetch('/libs/granite/csrf/token.json', { credentials: 'same-origin' });
+        if (!r.ok) return null;
+        const j = await r.json();
+        return j.token || null;
+      } catch { return null; }
+    }
 
-        const text = await response.text();
-        let json;
-        try {
-          json = JSON.parse(text);
-        } catch {
-          json = { raw: text };
-        }
-        show(json);
-      } catch (err) {
-        show({ error: true, message: err.message });
-      } finally {
-        btn.disabled = false;
-        btn.textContent = 'Submit';
-      }
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      document.getElementById('MessageBody').value = buildMessageBody(form);
+
+      btn.disabled = true; btn.textContent = 'Submitting…'; setOut('Submitting…');
+
+      Promise.resolve(getCsrf()).then(function (csrf) {
+        grecaptcha.ready(function () {
+          grecaptcha.execute(siteKey, { action: 'submit' }).then(function (recaptchaToken) {
+            const fd = new FormData(form);
+            fd.append('g-recaptcha-response', recaptchaToken);
+
+            fetch(form.action, {
+              method: 'POST',
+              headers: csrf ? { 'CSRF-Token': csrf } : {},
+              body: fd,
+              credentials: 'same-origin'
+            })
+            .then(function (res) { return res.text().then(function(t){ return { ok: res.ok, t: t }; }); })
+            .then(function (r) {
+              try { setOut(JSON.parse(r.t)); } catch { setOut(r.t); }
+            })
+            .catch(function (err) { setOut({ error:true, message: err.message }); })
+            .finally(function(){ btn.disabled = false; btn.textContent = 'Submit'; });
+          });
+        });
+      });
     });
   })();
   </script>
-
 </body>
 </html>
