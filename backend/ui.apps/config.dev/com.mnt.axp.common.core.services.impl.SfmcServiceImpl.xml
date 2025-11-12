@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jcr:root
+    xmlns:jcr="http://www.jcp.org/jcr/1.0"
+    xmlns:sling="http://sling.apache.org/jcr/sling/1.0"
+    jcr:primaryType="sling:OsgiConfig"
+    auth_base="https://mcwwxntrfl-kg2xh-7xzn4hr4qzm.auth.marketingcloudapis.com"
+    rest_base="https://mcwwxntrfl-kg2xh-7xzn4hr4qzm.rest.marketingcloudapis.com"
+    client_id="REPLACE_ME"
+    client_secret="REPLACE_ME"
+    account_id="REPLACE_ME"
+    use_proxy="{Boolean}true"
+    proxy_base="/bin/sfmc/proxy"
+/>

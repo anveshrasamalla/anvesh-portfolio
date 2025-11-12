@@ -1,0 +1,141 @@
+package com.mnt.axp.common.core.servlets;
+
+import org.apache.commons.io.IOUtils;
+import org.apache.http.client.config.RequestConfig;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.conn.ssl.NoopHostnameVerifier;
+import org.apache.http.entity.ContentType;
+import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
+import org.apache.http.ssl.SSLContextBuilder;
+import org.apache.sling.api.SlingHttpServletRequest;
+import org.apache.sling.api.SlingHttpServletResponse;
+import org.apache.sling.api.servlets.SlingAllMethodsServlet;
+import org.osgi.service.component.annotations.Activate;
+import org.osgi.service.component.annotations.Component;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import javax.net.ssl.SSLContext;
+import javax.servlet.Servlet;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+
+/**
+ * Very small pass-through proxy for SFMC calls, for LOCAL DEV only.
+ *
+ * Enable trust-all TLS locally with:  -Daxp.ssl.trustAll=true
+ * This servlet is NOT meant for higher environments.
+ *
+ * POST /bin/sfmc/proxy?target=auth
+ * POST /bin/sfmc/proxy?target=rest&path=/data/v1/async/...
+ */
+@Component(
+        service = Servlet.class,
+        property = {
+                "sling.servlet.methods=POST",
+                "sling.servlet.paths=/bin/sfmc/proxy"
+        }
+)
+public class SfmcProxyServlet extends SlingAllMethodsServlet {
+    private static final Logger LOG = LoggerFactory.getLogger(SfmcProxyServlet.class);
+
+    // Hard-coded tenant bases only for local testing
+    private static final String SFMC_AUTH_BASE = "https://mcwwxntrfl-kg2xh-7xzn4hr4qzm.auth.marketingcloudapis.com";
+    private static final String SFMC_REST_BASE = "https://mcwwxntrfl-kg2xh-7xzn4hr4qzm.rest.marketingcloudapis.com";
+
+    // Local-only TLS bypass (use JVM flag -Daxp.ssl.trustAll=true)
+    private static final boolean TRUST_ALL_FOR_DEV = Boolean.getBoolean("axp.ssl.trustAll");
+
+    private static final int TIMEOUT_MS = (int) Duration.ofSeconds(15).toMillis();
+
+    private transient CloseableHttpClient httpClient;
+    private transient RequestConfig requestConfig;
+
+    @Activate
+    protected void activate() {
+        try {
+            requestConfig = RequestConfig.custom()
+                    .setConnectTimeout(TIMEOUT_MS)
+                    .setConnectionRequestTimeout(TIMEOUT_MS)
+                    .setSocketTimeout(TIMEOUT_MS)
+                    .build();
+
+            if (TRUST_ALL_FOR_DEV) {
+                SSLContext sslContext = SSLContextBuilder.create()
+                        .loadTrustMaterial(null, (chain, authType) -> true)
+                        .build();
+                httpClient = HttpClients.custom()
+                        .setDefaultRequestConfig(requestConfig)
+                        .setSSLContext(sslContext)
+                        .setSSLHostnameVerifier(NoopHostnameVerifier.INSTANCE)
+                        .build();
+                LOG.warn("SfmcProxyServlet: DEV trust-all TLS ENABLED (local only).");
+            } else {
+                httpClient = HttpClients.custom()
+                        .setDefaultRequestConfig(requestConfig)
+                        .build();
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to init SFMC proxy client", e);
+        }
+    }
+
+    @Override
+    protected void doPost(SlingHttpServletRequest req, SlingHttpServletResponse resp) throws IOException {
+        resp.setContentType("application/json");
+
+        final String target = req.getParameter("target"); // "auth" | "rest"
+        final String path   = req.getParameter("path");   // for "rest"
+        final String body   = IOUtils.toString(req.getInputStream(), StandardCharsets.UTF_8);
+
+        String upstreamUrl;
+        if ("auth".equalsIgnoreCase(target)) {
+            upstreamUrl = SFMC_AUTH_BASE + "/v2/token";
+        } else if ("rest".equalsIgnoreCase(target)) {
+            if (path == null || path.isEmpty() || !path.startsWith("/")) {
+                resp.setStatus(400);
+                resp.getWriter().write("{\"error\":\"missing or invalid 'path' parameter\"}");
+                return;
+            }
+            upstreamUrl = SFMC_REST_BASE + path;
+        } else {
+            resp.setStatus(400);
+            resp.getWriter().write("{\"error\":\"missing or invalid 'target' (use 'auth' or 'rest')\"}");
+            return;
+        }
+
+        LOG.info("SFMC proxy -> {} (len={})", upstreamUrl, body.length());
+
+        HttpPost post = new HttpPost(upstreamUrl);
+        post.setConfig(requestConfig);
+        post.setHeader("Content-Type", "application/json");
+
+        // Forward Authorization ONLY for REST
+        if ("rest".equalsIgnoreCase(target)) {
+            String auth = req.getHeader("Authorization");
+            if (auth != null) post.setHeader("Authorization", auth);
+        }
+
+        post.setEntity(new StringEntity(body, ContentType.APPLICATION_JSON));
+
+        try (CloseableHttpResponse upstream = httpClient.execute(post)) {
+            int status = upstream.getStatusLine().getStatusCode();
+            String responseBody = upstream.getEntity() != null
+                    ? IOUtils.toString(upstream.getEntity().getContent(), StandardCharsets.UTF_8)
+                    : "";
+
+            LOG.info("SFMC proxy response: status={} len={}", status, responseBody.length());
+            resp.setStatus(status);
+            resp.getWriter().write(responseBody);
+        } catch (Exception e) {
+            LOG.error("SFMC proxy error", e);
+            resp.setStatus(500);
+            String safe = (e.getMessage() == null ? e.toString() : e.getMessage()).replace("\"","\\\"");
+            resp.getWriter().write("{\"error\":\"" + safe + "\"}");
+        }
+    }
+}
