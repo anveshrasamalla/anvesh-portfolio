@@ -20,31 +20,37 @@ import java.util.*;
 import static org.apache.jackrabbit.webdav.DavConstants.HEADER_CONTENT_TYPE;
 
 /**
- * ApiClient with optional "trust-all SSL" for DEV to bypass PKIX errors.
- * Enable by starting AEM with:  -Daxp.ssl.trustAll=true
+ * ApiClient with optional, DEV-ONLY "trust-all" TLS to bypass PKIX locally.
  *
- * NEVER enable trustAll in QA/Stage/Prod. Use a proper truststore there.
+ * NORMAL BEHAVIOR (default):
+ *   - Uses JVM/AEM truststore; validates server certs and hostnames.
+ *
+ * DEV-ONLY OVERRIDE:
+ *   - Start AEM with: -Daxp.ssl.trustAll=true
+ *   - Then, for HTTPS connections opened by THIS client, we install an
+ *     in-memory TrustManager that accepts all cert chains and a hostname verifier
+ *     that always returns true. This resolves PKIX in local sandboxes.
+ *
+ * IMPORTANT:
+ *   - Do NOT enable in QA/Stage/Prod. Use proper certs or Granite SSL truststore.
+ *   - The switch is per-JVM via system property, so it is easy to remove.
  */
 public class ApiClient {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ApiClient.class);
 
+    // timeouts
     private static final int CONNECTION_TIMEOUT = 5000;
     private static final int SOCKET_TIMEOUT = 5000;
 
-    // System property toggles
+    // DEV flag (read once, kept simple & explicit)
     private static final String PROP_TRUST_ALL = "axp.ssl.trustAll";
-    private static final String PROP_SSL_DEBUG = "axp.ssl.debug"; // optional: -Daxp.ssl.debug=true
+    private static final boolean TRUST_ALL_ENABLED = Boolean.getBoolean(PROP_TRUST_ALL);
 
-    // Cached trust-all objects (created lazily)
+    // Lazy singletons for the DEV trust-all context
     private static volatile SSLSocketFactory TRUST_ALL_FACTORY;
     private static final HostnameVerifier TRUST_ALL_HOSTNAMES = new HostnameVerifier() {
-        @Override public boolean verify(String hostname, SSLSession session) {
-            // DEV-ONLY: allow all hostnames.
-            // If you want to be slightly stricter, replace with:
-            // return hostname != null && hostname.endsWith(".marketingcloudapis.com");
-            return true;
-        }
+        @Override public boolean verify(String hostname, SSLSession session) { return true; }
     };
 
     public ApiClient() {}
@@ -52,25 +58,28 @@ public class ApiClient {
     public JsonObject makeApiCall(String method, String apiUrl, JsonObject requestData, Map<String, String> requestHeaders) {
         HttpURLConnection conn = null;
         try {
-            // prune empty string values on POST
+            // 1) Defensive cleanup for POST JSON (remove empty-string primitives)
             if ("POST".equalsIgnoreCase(method) && requestData != null) {
-                List<String> remove = new ArrayList<String>();
+                final List<String> remove = new ArrayList<String>();
                 for (String k : requestData.keySet()) {
                     try {
                         if (requestData.get(k).getAsString().isEmpty()) remove.add(k);
-                    } catch (IllegalStateException ignore) { /* non-string node */ }
+                    } catch (IllegalStateException ignore) { /* non-string value is fine */ }
                 }
                 for (String k : remove) requestData.remove(k);
             }
 
+            // 2) Open connection (ensure TLS tweaks are applied if dev flag is on)
             URL url = new URL(apiUrl);
-            conn = open(url);
+            conn = open(url); // <= minimal change: central place to attach trust-all if enabled
+
             conn.setConnectTimeout(CONNECTION_TIMEOUT);
             conn.setReadTimeout(SOCKET_TIMEOUT);
             conn.setRequestMethod(method);
             conn.setRequestProperty(HEADER_CONTENT_TYPE, "application/json; charset=UTF-8");
             conn.setDoOutput(true);
 
+            // 3) Write headers/body for POST
             if ("POST".equalsIgnoreCase(method)) {
                 if (requestHeaders != null) {
                     for (Map.Entry<String,String> e : requestHeaders.entrySet()) {
@@ -79,101 +88,102 @@ public class ApiClient {
                 }
                 if (requestData != null) {
                     OutputStream os = conn.getOutputStream();
-                    try { os.write(requestData.toString().getBytes(StandardCharsets.UTF_8)); }
-                    finally { os.close(); }
+                    try {
+                        os.write(requestData.toString().getBytes(StandardCharsets.UTF_8));
+                    } finally {
+                        os.close();
+                    }
                 }
             }
 
-            int code = conn.getResponseCode();
-            if (code == HttpURLConnection.HTTP_OK || code == 202) {
+            // 4) Read response
+            final int code = conn.getResponseCode();
+            if (code == HttpURLConnection.HTTP_OK || code == HttpURLConnection.HTTP_ACCEPTED) {
                 BufferedReader rd = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
                 StringBuilder sb = new StringBuilder();
-                try { String line; while ((line = rd.readLine()) != null) sb.append(line); }
-                finally { rd.close(); }
+                try {
+                    String line;
+                    while ((line = rd.readLine()) != null) sb.append(line);
+                } finally {
+                    rd.close();
+                }
                 return new Gson().fromJson(sb.toString(), JsonObject.class);
             } else {
-                // Try to read error stream for details
+                // Try to capture error body to help debugging PKIX or 401/403/etc.
                 String msg = conn.getResponseMessage();
                 try {
                     if (conn.getErrorStream() != null) {
                         BufferedReader er = new BufferedReader(new InputStreamReader(conn.getErrorStream(), StandardCharsets.UTF_8));
                         StringBuilder eb = new StringBuilder();
-                        String ln;
-                        while ((ln = er.readLine()) != null) eb.append(ln);
+                        String ln; while ((ln = er.readLine()) != null) eb.append(ln);
                         er.close();
                         if (eb.length() > 0) msg = msg + " | body=" + eb.toString();
                     }
                 } catch (Exception ignore) {}
+                LOGGER.warn("ApiClient: non-OK response {} from {}", code, apiUrl);
                 return ErrorResponseFactory.createErrorResponse(
                         "API call failed with response code: " + code + ". Error message: " + msg);
             }
+
         } catch (SSLHandshakeException she) {
-            // Common when PKIX fails
-            logSslHint(she);
+            // Classic PKIX failure surface
+            LOGGER.error("TLS handshake failed: {}", she.getMessage());
+            if (!TRUST_ALL_ENABLED) {
+                LOGGER.error("Hint: enable DEV-only trust-all with -D{}=true (local only) or import the server cert chain into JVM/Granite truststore.", PROP_TRUST_ALL);
+            }
             return ErrorResponseFactory.createErrorResponse("TLS handshake failed: " + she.getMessage());
+
         } catch (IOException e) {
+            LOGGER.error("ApiClient IOException calling {}", apiUrl, e);
             return ErrorResponseFactory.createErrorResponse("API call failed with an IOException: " + e.getMessage());
+
         } finally {
             if (conn != null) conn.disconnect();
         }
     }
 
     /**
-     * Opens a URL connection. If HTTPS and the system property axp.ssl.trustAll=true is set,
-     * applies a "trust-all" SSLSocketFactory + HostnameVerifier for THIS CONNECTION ONLY.
+     * Open URLConnection. If https:// and DEV flag is ON, attach a trust-all
+     * SSLSocketFactory and all-hostnames verifier to THIS connection only.
+     * This keeps blast-radius low and is easy to remove later.
      */
     private HttpURLConnection open(URL url) throws IOException {
         URLConnection raw = url.openConnection();
-
-        if ("https".equalsIgnoreCase(url.getProtocol())) {
-            HttpsURLConnection https = (HttpsURLConnection) raw;
-
-            if (Boolean.getBoolean(PROP_TRUST_ALL)) {
-                try {
-                    if (TRUST_ALL_FACTORY == null) {
-                        synchronized (ApiClient.class) {
-                            if (TRUST_ALL_FACTORY == null) {
-                                TRUST_ALL_FACTORY = buildTrustAllFactory();
-                                LOGGER.warn("ApiClient: TRUST-ALL SSL ENABLED ({}=true). DEV ONLY. Do NOT use in prod.",
-                                        PROP_TRUST_ALL);
-                            }
-                        }
-                    }
-                    https.setSSLSocketFactory(TRUST_ALL_FACTORY);
-                    https.setHostnameVerifier(TRUST_ALL_HOSTNAMES);
-
-                    if (Boolean.getBoolean(PROP_SSL_DEBUG)) {
-                        System.setProperty("javax.net.debug", "ssl,handshake");
-                    }
-                } catch (GeneralSecurityException gse) {
-                    LOGGER.error("Failed to initialize trust-all SSL context", gse);
-                    // fall back to default SSL (will still throw PKIX if not trusted)
-                }
-            }
-            return https;
+        if (!"https".equalsIgnoreCase(url.getProtocol())) {
+            return (HttpURLConnection) raw;
         }
-        return (HttpURLConnection) raw;
+
+        HttpsURLConnection https = (HttpsURLConnection) raw;
+
+        if (TRUST_ALL_ENABLED) {
+            try {
+                if (TRUST_ALL_FACTORY == null) {
+                    synchronized (ApiClient.class) {
+                        if (TRUST_ALL_FACTORY == null) TRUST_ALL_FACTORY = buildTrustAllFactory();
+                    }
+                }
+                https.setSSLSocketFactory(TRUST_ALL_FACTORY);
+                https.setHostnameVerifier(TRUST_ALL_HOSTNAMES);
+                LOGGER.warn("ApiClient: DEV trust-all TLS is active for {}", url.getHost());
+            } catch (GeneralSecurityException gse) {
+                LOGGER.error("ApiClient: failed to init DEV trust-all TLS", gse);
+            }
+        }
+
+        return https;
     }
 
-    /** Build a trust-all SSLSocketFactory (DEV ONLY). */
+    /** Build an in-memory trust-all socket factory (DEV ONLY). */
     private static SSLSocketFactory buildTrustAllFactory() throws GeneralSecurityException {
         TrustManager[] trustAll = new TrustManager[] {
             new X509TrustManager() {
-                @Override public void checkClientTrusted(X509Certificate[] chain, String authType) { /* no-op */ }
-                @Override public void checkServerTrusted(X509Certificate[] chain, String authType) { /* no-op */ }
+                @Override public void checkClientTrusted(X509Certificate[] chain, String authType) { }
+                @Override public void checkServerTrusted(X509Certificate[] chain, String authType) { }
                 @Override public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
             }
         };
         SSLContext ctx = SSLContext.getInstance("TLS");
         ctx.init(null, trustAll, new SecureRandom());
         return ctx.getSocketFactory();
-    }
-
-    private void logSslHint(Exception e) {
-        LOGGER.error("TLS handshake error (likely PKIX). {}", e.getMessage());
-        LOGGER.error("Hints:");
-        LOGGER.error(" - Import SFMC cert chain into your JVM truststore or Granite SSL Service.");
-        LOGGER.error(" - Or start AEM with -D{}=true (DEV ONLY) to bypass verification in ApiClient.", PROP_TRUST_ALL);
-        LOGGER.error(" - To debug, add -D{}=true", PROP_SSL_DEBUG);
     }
 }
