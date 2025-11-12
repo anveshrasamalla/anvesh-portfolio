@@ -1,40 +1,55 @@
-<!-- /apps/axp-common/components/form/sfmc-form/sfmc-form.html -->
-<div class="sfmc-form" data-component="sfmc-form" data-servlet="/bin/wcm/sfmc">
-  <form id="sfmcForm" method="post" novalidate>
-    <input type="hidden" name="aemformid" value="1001" />
+<!DOCTYPE html>
+<html>
+<head>
+  <title>SFMC Form Test</title>
+  <script src="https://www.google.com/recaptcha/api.js?render=YOUR_SITE_KEY"></script>
+</head>
+<body style="font-family:Arial;max-width:600px;margin:30px auto;">
 
-    <div class="field">
-      <label>First Name*</label>
-      <input type="text" name="FirstName" required />
-    </div>
+  <h2>SFMC Test Form</h2>
+  <form id="sfmcForm" action="/bin/wcm/sfmc" method="POST">
+    <input type="hidden" name="deKey" value="AEM-FORM-ENDPNT-INTRNL-TEST">
+    <input type="hidden" id="MessageBody" name="MessageBody">
 
-    <div class="field">
-      <label>Last Name*</label>
-      <input type="text" name="LastName" required />
-    </div>
+    <label>Form ID: <input name="FormID" value="TestForm"></label><br>
+    <label>Email: <input name="Email" type="email" value="john@example.com"></label><br>
+    <label>First Name: <input name="FirstName" value="John"></label><br>
+    <label>Last Name: <input name="LastName" value="Doe"></label><br><br>
 
-    <div class="field">
-      <label>Email*</label>
-      <input type="email" name="Email" required />
-    </div>
-
-    <div class="field">
-      <label>Phone</label>
-      <input type="text" name="Phone" />
-    </div>
-
-    <div class="field">
-      <label>State</label>
-      <input type="text" name="State" maxlength="2" />
-    </div>
-
-    <div class="g-recaptcha" data-sitekey="${properties.recaptchaSiteKey @ context='unsafe'}"></div>
-
-    <button type="submit" class="btn">Submit</button>
-
-    <div id="sfmcStatus" class="sfmc-status" aria-live="polite"></div>
+    <button type="submit">Submit</button>
   </form>
-</div>
 
-<!-- Include clientlib -->
-<cq:includeClientLib categories="axp.sfmc.form"/>
+  <pre id="result" style="background:#f7f7f7;padding:10px;margin-top:10px;"></pre>
+
+  <script>
+    const form = document.getElementById("sfmcForm");
+    form.addEventListener("submit", function(e) {
+      e.preventDefault();
+
+      const msg = Array.from(form.querySelectorAll("input"))
+        .filter(i => i.type !== "hidden")
+        .map(i => `${i.name}: ${i.value}`)
+        .join("\r\n");
+      document.getElementById("MessageBody").value = msg;
+
+      grecaptcha.ready(() => {
+        grecaptcha.execute('YOUR_SITE_KEY', {action:'submit'}).then(token => {
+          const fd = new FormData(form);
+          fd.append("g-recaptcha-response", token);
+
+          fetch(form.action, {method: "POST", body: fd})
+            .then(res => res.json())
+            .then(data => {
+              document.getElementById("result").textContent =
+                `Message: ${data.message}\nError: ${data.error}\nStatus: ${data.httpCode}\nRequest ID: ${data.requestId}`;
+            })
+            .catch(err => {
+              document.getElementById("result").textContent = "Error: " + err;
+            });
+        });
+      });
+    });
+  </script>
+
+</body>
+</html>

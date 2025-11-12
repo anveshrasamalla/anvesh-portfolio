@@ -5,129 +5,129 @@ import com.google.gson.JsonParser;
 import com.mnt.axp.common.core.services.api.SfmcService;
 import com.mnt.axp.common.core.utils.ApiClient;
 import com.mnt.axp.common.core.utils.Recaptcha;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.sling.api.request.RequestParameter;
 import org.apache.sling.api.request.RequestParameterMap;
-import org.osgi.service.component.annotations.Activate;
-import org.osgi.service.component.annotations.Component;
-import org.osgi.service.component.annotations.Modified;
-import org.osgi.service.metatype.annotations.AttributeDefinition;
-import org.osgi.service.metatype.annotations.Designate;
-import org.osgi.service.metatype.annotations.ObjectClassDefinition;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import org.osgi.service.component.annotations.*;
+import org.osgi.service.metatype.annotations.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.servlet.http.HttpServletRequest;
 import java.io.IOException;
-import java.time.ZonedDateTime;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 
-import org.json.JSONArray;
-import org.json.JSONObject;
-
+/**
+ * AXP Salesforce Marketing Cloud Service Implementation
+ *
+ * Flow:
+ *  1. Validate reCAPTCHA
+ *  2. Get OAuth token
+ *  3. Build payload (required fields only)
+ *  4. Post to Data Extension (async)
+ *  5. Return {message, error, httpCode, requestId}
+ */
 @Component(service = SfmcService.class, immediate = true)
 @Designate(ocd = SfmcServiceImpl.Config.class)
 public class SfmcServiceImpl implements SfmcService {
 
     private static final Logger LOG = LoggerFactory.getLogger(SfmcServiceImpl.class);
 
-    @ObjectClassDefinition(name = "AXP SFMC Integration (Option B)")
+    @ObjectClassDefinition(name = "AXP SFMC Configuration")
     public @interface Config {
-        @AttributeDefinition(name = "SFMC Auth Base URL")
         String sfmc_auth_base();
-        @AttributeDefinition(name = "SFMC REST Base URL")
         String sfmc_rest_base();
-        @AttributeDefinition(name = "SFMC Client ID")
         String sfmc_client_id();
-        @AttributeDefinition(name = "SFMC Client Secret")
         String sfmc_client_secret();
-        @AttributeDefinition(name = "SFMC Account ID")
         String sfmc_account_id();
-        @AttributeDefinition(name = "Default Data Extension Key")
-        String sfmc_default_de_key();
-
-        @AttributeDefinition(name = "reCAPTCHA Secret Key")
         String recaptcha_secret();
-
-        @AttributeDefinition(name = "Enable Debug Logs", deflt = "false")
-        boolean debug_logs();
+        boolean debug_logs() default false;
     }
 
-    // OSGi config
-    private String authBase;
-    private String restBase;
-    private String clientId;
-    private String clientSecret;
-    private String accountId;
-    private String defaultDeKey;
-    private String recaptchaSecret;
+    private String authBase, restBase, clientId, clientSecret, accountId, recaptchaSecret;
     private boolean debug;
-
-    // Utilities
-    private ApiClient apiClient = new ApiClient();
-
-    /** allow test injection */
-    public void setApiClient(ApiClient apiClient) { this.apiClient = apiClient; }
+    private final ApiClient apiClient = new ApiClient();
 
     @Activate @Modified
     protected void activate(Config c) {
-        this.authBase        = trim(c.sfmc_auth_base());
-        this.restBase        = trim(c.sfmc_rest_base());
-        this.clientId        = c.sfmc_client_id();
-        this.clientSecret    = c.sfmc_client_secret();
-        this.accountId       = c.sfmc_account_id();
-        this.defaultDeKey    = c.sfmc_default_de_key();
-        this.recaptchaSecret = c.recaptcha_secret();
-        this.debug           = c.debug_logs();
-
-        LOG.info("SFMC Service active. AUTH={}, REST={}, DE={}, Debug={}",
-                authBase, restBase, defaultDeKey, debug);
+        authBase        = trim(c.sfmc_auth_base());
+        restBase        = trim(c.sfmc_rest_base());
+        clientId        = c.sfmc_client_id();
+        clientSecret    = c.sfmc_client_secret();
+        accountId       = c.sfmc_account_id();
+        recaptchaSecret = c.recaptcha_secret();
+        debug           = c.debug_logs();
+        LOG.info("SFMC Service activated for account={} (debug={})", accountId, debug);
     }
 
-    private String trim(String s) { return (s != null && s.endsWith("/")) ? s.substring(0, s.length() - 1) : s; }
+    private String trim(String s) {
+        return (s != null && s.endsWith("/")) ? s.substring(0, s.length() - 1) : s;
+    }
 
-    // ---------------- Main ----------------
     @Override
-    public SalesforceResponse submitToSfmc(RequestParameterMap params, HttpServletRequest request) throws IOException {
-        SalesforceResponse out = new SalesforceResponse();
-        final String submissionId = UUID.randomUUID().toString();
+    public SalesforceResponse submitToSfmc(RequestParameterMap params, HttpServletRequest request)
+            throws IOException {
 
-        // 1) reCAPTCHA score
-        double score = getCaptchaScore(params, request);
-        out.score = score;
-        LOG.info("reCAPTCHA score={}", score);
+        SalesforceResponse res = new SalesforceResponse();
+        String submissionId = UUID.randomUUID().toString();
 
-        // 2) Build payload
-        JSONObject payload = buildPayload(params, submissionId, score);
+        LOG.info("[SFMC] Submission start: {}", submissionId);
 
-        // 3) OAuth2
-        String token = getToken();
+        // 1️⃣ reCAPTCHA validation
+        res.score = getCaptchaScore(params, request);
+        LOG.debug("[SFMC] reCAPTCHA score={}", res.score);
 
-        // 4) Submit rows
-        boolean ok = postRows(token, payload);
+        // 2️⃣ Build payload
+        JSONObject payload = buildPayload(params, submissionId, res.score);
+        if (debug) LOG.debug("[SFMC] Payload JSON: {}", payload);
 
-        out.error = !ok;
-        out.message = ok ? "Successfully submitted to SFMC." : "SFMC submission failed.";
-        return out;
+        // 3️⃣ Get OAuth token
+        String token;
+        try {
+            token = getToken();
+            LOG.info("[SFMC] Token acquired successfully");
+        } catch (Exception e) {
+            res.error = true;
+            res.httpCode = 500;
+            res.message = "Auth failed: " + e.getMessage();
+            LOG.error("[SFMC] Auth error", e);
+            return res;
+        }
+
+        // 4️⃣ Get DE Key
+        String deKey = getParam(params, "deKey", "AEM-FORM-ENDPNT-INTRNL-TEST");
+        if (deKey.isEmpty()) {
+            res.error = true;
+            res.httpCode = 400;
+            res.message = "Missing Data Extension Key (deKey)";
+            return res;
+        }
+
+        // 5️⃣ POST to SFMC
+        JsonObject response = postToSfmc(token, deKey, payload);
+
+        if (response != null && response.has("requestId")) {
+            res.httpCode  = 202;
+            res.error     = false;
+            res.requestId = response.get("requestId").getAsString();
+            res.message   = "Accepted by SFMC";
+        } else {
+            res.httpCode  = 500;
+            res.error     = true;
+            res.message   = "Unexpected response";
+        }
+
+        LOG.info("[SFMC] Submission complete: status={} reqId={}", res.httpCode, res.requestId);
+        return res;
     }
 
-    // ---------------- Helpers ----------------
     private double getCaptchaScore(RequestParameterMap params, HttpServletRequest req) {
         try {
-            RequestParameter r = params.getValue("g-recaptcha-response");
-            String token = (r != null) ? r.getString() : "";
-            if (StringUtils.isBlank(token)) {
-                LOG.warn("Missing g-recaptcha-response");
-                return 0.0d;
-            }
-            // EXACT signature: (secretKey, publicKey, token, request)
+            String token = getParam(params, "g-recaptcha-response", "");
             return Recaptcha.isCaptchaValid(recaptchaSecret, "", token, req);
         } catch (Exception e) {
-            LOG.error("reCAPTCHA validation error", e);
-            return 0.0d;
+            LOG.warn("[SFMC] reCAPTCHA validation failed: {}", e.getMessage());
+            return 0.0;
         }
     }
 
@@ -139,58 +139,40 @@ public class SfmcServiceImpl implements SfmcService {
         body.addProperty("client_secret", clientSecret);
         body.addProperty("account_id", accountId);
 
-        JsonObject res = apiClient.makeApiCall("POST", url, body, Collections.<String,String>emptyMap());
-        if (res != null && res.has("access_token")) {
-            String token = res.get("access_token").getAsString();
-            if (debug) LOG.debug("SFMC auth OK. token length={}", (token != null ? token.length() : 0));
-            return token;
-        }
-        throw new RuntimeException("SFMC auth failed: " + String.valueOf(res));
+        JsonObject resp = apiClient.makeApiCall("POST", url, body, Collections.emptyMap());
+        if (resp != null && resp.has("access_token")) return resp.get("access_token").getAsString();
+        throw new RuntimeException("Invalid token response: " + resp);
     }
 
-    private boolean postRows(String token, JSONObject payload) {
-        String url = restBase + "/data/v1/async/dataextensions/key:" + defaultDeKey + "/rows";
+    private JSONObject buildPayload(RequestParameterMap params, String submissionId, double score) {
+        JSONObject item = new JSONObject();
+        item.put("AEMSubmissionID", submissionId);
+        item.put("TimeStamp", "");
+        item.put("FormID", getParam(params, "FormID", "unknown"));
+        item.put("MessageBody", getParam(params, "MessageBody", ""));
+        item.put("CaptchaScore", score);
 
-        Map<String,String> headers = new HashMap<String,String>();
+        JSONArray items = new JSONArray();
+        items.put(item);
+        JSONObject root = new JSONObject();
+        root.put("items", items);
+        return root;
+    }
+
+    private String getParam(RequestParameterMap map, String key, String def) {
+        return map.containsKey(key) ? map.getValue(key).getString() : def;
+    }
+
+    private JsonObject postToSfmc(String token, String deKey, JSONObject payload) {
+        String url = restBase + "/data/v1/async/dataextensions/key:" + deKey + "/rows";
+        Map<String,String> headers = new HashMap<>();
         headers.put("Authorization", "Bearer " + token);
         headers.put("Content-Type", "application/json");
 
-        JsonObject gsonPayload = new JsonParser().parse(payload.toString()).getAsJsonObject();
-        JsonObject res = apiClient.makeApiCall("POST", url, gsonPayload, headers);
+        JsonObject body = JsonParser.parseString(payload.toString()).getAsJsonObject();
+        JsonObject resp = apiClient.makeApiCall("POST", url, body, headers);
 
-        if (debug) LOG.debug("SFMC DE response: {}", String.valueOf(res));
-        return !(res == null || res.has("error"));
-    }
-
-    private JSONObject buildPayload(RequestParameterMap p, String submissionId, double score) {
-        JSONObject item = new JSONObject();
-        String email = getParam(p, "Email", "unknown@example.com");
-
-        item.put("SubscriberKey", email);
-        item.put("EmailAddress", email);
-        item.put("FirstName", getParam(p, "FirstName", ""));
-        item.put("LastName", getParam(p, "LastName", ""));
-        item.put("Phone", getParam(p, "Phone", ""));
-        item.put("City", getParam(p, "City", ""));
-        item.put("State", getParam(p, "State", ""));
-        item.put("Zip", getParam(p, "Zip", ""));
-        item.put("Country", getParam(p, "Country", ""));
-
-        item.put("FormID", getParam(p, "FormID", "unknown"));
-        item.put("AEMSubmissionID", submissionId);
-        item.put("CaptchaScore", score);
-        item.put("TimeStamp", ZonedDateTime.now().toString());
-        item.put("MessageBody", "Submitted via AEM " + ZonedDateTime.now());
-
-        JSONArray arr = new JSONArray();
-        arr.put(item);
-
-        JSONObject payload = new JSONObject();
-        payload.put("items", arr);
-        return payload;
-    }
-
-    private String getParam(RequestParameterMap p, String key, String def) {
-        return p.containsKey(key) ? p.getValue(key).getString() : def;
+        if (debug) LOG.debug("[SFMC] Raw API response: {}", resp);
+        return resp;
     }
 }
