@@ -1,13 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<jcr:root
-    xmlns:jcr="http://www.jcp.org/jcr/1.0"
-    xmlns:sling="http://sling.apache.org/jcr/sling/1.0"
-    jcr:primaryType="sling:OsgiConfig"
-    auth_base="https://<dev-tenant>.auth.marketingcloudapis.com"
-    rest_base="https://<dev-tenant>.rest.marketingcloudapis.com"
-    client_id="REPLACE_ME"
-    client_secret="REPLACE_ME"
-    account_id="REPLACE_ME"
-    recaptcha_secret="REPLACE_ME"
-    recaptcha_site_key="REPLACE_ME"
-/>
+<jcr:root xmlns:sling="http://sling.apache.org/jcr/sling/1.0"
+          xmlns:jcr="http://www.jcp.org/jcr/1.0"
+          jcr:primaryType="sling:OsgiConfig"
+          sfmc_auth_base="https://YOUR-SUBDOMAIN.auth.marketingcloudapis.com"
+          sfmc_rest_base="https://YOUR-SUBDOMAIN.rest.marketingcloudapis.com"
+          sfmc_client_id="YOUR_CLIENT_ID"
+          sfmc_client_secret="YOUR_CLIENT_SECRET"
+          sfmc_account_id="YOUR_ACCOUNT_ID"
+          sfmc_default_de_key="AEM-FORM-ENDPNT-INTRL-TEST"
+          debug_logs="{Boolean}false"/>
