@@ -1,204 +1,232 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>SFMC Test Form with reCAPTCHA v3</title>
+    <meta charset="UTF-8">
+    <title>SFMC Form Test</title>
 
-  <!-- Load reCAPTCHA v3 script FIRST -->
-  <!-- IMPORTANT: replace YOUR_SITE_KEY_HERE with your site key -->
-  <script src="https://www.google.com/recaptcha/api.js?render=YOUR_SITE_KEY_HERE" async defer></script>
+    <!-- Simple styles just so it looks reasonable -->
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #0f172a;
+            color: #e5e7eb;
+            margin: 0;
+            padding: 40px;
+        }
+        h1 {
+            margin-top: 0;
+        }
+        .container {
+            max-width: 640px;
+            margin: 0 auto;
+            background: #111827;
+            padding: 24px 28px;
+            border-radius: 8px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 0.95rem;
+        }
+        input[type="text"],
+        input[type="email"],
+        textarea {
+            width: 100%;
+            padding: 8px 10px;
+            margin-bottom: 14px;
+            border-radius: 4px;
+            border: 1px solid #4b5563;
+            background: #020617;
+            color: #e5e7eb;
+            box-sizing: border-box;
+            font-size: 0.95rem;
+        }
+        textarea {
+            resize: vertical;
+        }
+        button {
+            display: inline-block;
+            padding: 10px 20px;
+            border-radius: 999px;
+            border: none;
+            cursor: pointer;
+            font-size: 1rem;
+            background: #3b82f6;
+            color: #f9fafb;
+            font-weight: 600;
+        }
+        button:disabled {
+            opacity: 0.6;
+            cursor: default;
+        }
+        pre {
+            background: #020617;
+            border-radius: 6px;
+            padding: 12px 14px;
+            font-size: 0.85rem;
+            max-height: 260px;
+            overflow: auto;
+            margin-top: 18px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .hint {
+            font-size: 0.8rem;
+            color: #9ca3af;
+            margin-bottom: 8px;
+        }
+    </style>
 
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      background:#f5f5f7;
-      margin:0;
-      padding:40px;
-    }
-    .card {
-      max-width:700px;
-      margin:0 auto;
-      background:#fff;
-      border-radius:8px;
-      box-shadow:0 2px 8px rgba(0,0,0,0.1);
-      padding:24px 32px 32px;
-    }
-    h1 {
-      margin-top:0;
-      font-size:20px;
-    }
-    .form-row {
-      margin-bottom:12px;
-    }
-    .form-row label {
-      display:block;
-      font-size:13px;
-      font-weight:600;
-      margin-bottom:4px;
-    }
-    .form-row input,
-    .form-row textarea {
-      width:100%;
-      padding:6px 8px;
-      font-size:13px;
-      box-sizing:border-box;
-    }
-    button[type="submit"] {
-      display:block;
-      width:100%;
-      padding:10px;
-      margin-top:16px;
-      border:none;
-      border-radius:4px;
-      background:#0077cc;
-      color:#fff;
-      font-size:14px;
-      cursor:pointer;
-    }
-    button[disabled] {
-      background:#999;
-      cursor:not-allowed;
-    }
-    pre {
-      margin-top:20px;
-      background:#111827;
-      color:#e5e7eb;
-      padding:12px;
-      border-radius:6px;
-      font-size:12px;
-      max-height:260px;
-      overflow:auto;
-    }
-  </style>
+    <!-- reCAPTCHA v3 – replace YOUR_SITE_KEY_HERE with your real site key -->
+    <script
+        src="https://www.google.com/recaptcha/api.js?render=YOUR_SITE_KEY_HERE"
+        async defer></script>
 </head>
 <body>
+<div class="container">
+    <h1>SFMC Form Test</h1>
+    <p class="hint">
+        This posts to <code>/bin/wcm/sfmc</code> and expects JSON:
+        <code>{ message, error, httpCode, requestId }</code>.
+    </p>
 
-<div class="card">
-  <h1>SFMC Test Form (reCAPTCHA v3)</h1>
-  <p style="font-size:13px;color:#444;">
-    On submit we request a reCAPTCHA token, attach it as
-    <code>g-recaptcha-response</code>, and POST to
-    <code>/bin/wcm/sfmc</code>.
-  </p>
+    <form id="sfmcForm" action="/bin/wcm/sfmc" method="post">
+        <label>
+            Email
+            <input type="email" name="EmailAddress"
+                   value="test@example.com" required>
+        </label>
 
-  <form id="sfmcForm" method="post">
-    <!-- Required by our backend -->
-    <input type="hidden" name="FormID" value="education not for profit">
-    <input type="hidden" id="recapToken" name="g-recaptcha-response" value="">
+        <label>
+            Phone
+            <input type="text" name="Phone" value="1234567890">
+        </label>
 
-    <div class="form-row">
-      <label for="firstName">First Name</label>
-      <input id="firstName" name="FirstName" value="John">
-    </div>
+        <label>
+            MessageBody (optional)
+            <textarea name="MessageBody" rows="3">
+Some optional message body text from the front end.
+            </textarea>
+        </label>
 
-    <div class="form-row">
-      <label for="lastName">Last Name</label>
-      <input id="lastName" name="LastName" value="Doe">
-    </div>
+        <!-- Your own form ID – flows through to SFMC -->
+        <input type="hidden" name="FormID" value="AEM-Test-Form-001">
 
-    <div class="form-row">
-      <label for="email">Email</label>
-      <input id="email" name="Email" type="email" value="testing@example.com">
-    </div>
+        <!-- reCAPTCHA v3 token will be written here -->
+        <input type="hidden"
+               id="recapToken"
+               name="g-recaptcha-response"
+               value="">
 
-    <div class="form-row">
-      <label for="phone">Phone</label>
-      <input id="phone" name="Phone" value="1234567890">
-    </div>
+        <button type="submit" id="submitBtn">Submit</button>
+    </form>
 
-    <div class="form-row">
-      <label for="messageBody">MessageBody (optional)</label>
-      <textarea id="messageBody" name="MessageBody" rows="4">
-Some optional message body text from the front-end.
-      </textarea>
-    </div>
-
-    <button type="submit" id="submitBtn">Submit to SFMC</button>
-  </form>
-
-  <pre id="resultBox">{ "status": "idle" }</pre>
+    <pre id="sfmcResult">Response will appear here…</pre>
 </div>
 
 <script>
-(function() {
-  // IMPORTANT: must match the key in the script src above
-  var SITE_KEY = 'YOUR_SITE_KEY_HERE';
-
-  var form, resultBox, submitBtn, tokenInput;
-
-  function setResult(text) {
-    if (resultBox) {
-      resultBox.textContent = text;
-    }
-  }
-
-  function setLoading(isLoading) {
-    if (!submitBtn) return;
-    submitBtn.disabled = isLoading;
-    submitBtn.textContent = isLoading ? 'Submitting…' : 'Submit to SFMC';
-  }
-
-  document.addEventListener('DOMContentLoaded', function() {
-    form      = document.getElementById('sfmcForm');
-    resultBox = document.getElementById('resultBox');
-    submitBtn = document.getElementById('submitBtn');
-    tokenInput= document.getElementById('recapToken');
+(function () {
+    // MUST match the key used in the script URL above
+    var SITE_KEY   = 'YOUR_SITE_KEY_HERE';
+    var form       = document.getElementById('sfmcForm');
+    var resultBox  = document.getElementById('sfmcResult');
+    var tokenField = document.getElementById('recapToken');
+    var submitBtn  = document.getElementById('submitBtn');
 
     if (!form) {
-      console.error('sfmcForm not found on page');
-      return;
+        console.warn('[SFMC] Form #sfmcForm not found.');
+        return;
     }
 
-    form.addEventListener('submit', function(e) {
-      e.preventDefault();
-      setLoading(true);
-      setResult('Requesting reCAPTCHA token…');
+    function setBusy(isBusy, text) {
+        if (isBusy) {
+            submitBtn.disabled = true;
+            submitBtn.textContent = text || 'Submitting…';
+        } else {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Submit';
+        }
+    }
 
-      // Make sure the global grecaptcha object exists
-      if (typeof grecaptcha === 'undefined') {
-        setLoading(false);
-        setResult('Error: grecaptcha is not defined. Is the reCAPTCHA script URL correct?');
-        console.error('grecaptcha is not defined – check <script src="https://www.google.com/recaptcha/api.js?render=...">');
-        return;
-      }
+    form.addEventListener('submit', function (e) {
+        e.preventDefault();
 
-      grecaptcha.ready(function() {
-        grecaptcha.execute(SITE_KEY, { action: 'submit' })
-          .then(function(token) {
-            // Put token in hidden field so backend sees it as g-recaptcha-response
-            tokenInput.value = token;
+        resultBox.textContent = 'Getting reCAPTCHA token…';
+        setBusy(true, 'Getting token…');
 
-            setResult('Got token. Submitting to /bin/wcm/sfmc…');
+        if (!window.grecaptcha) {
+            resultBox.textContent =
+                'reCAPTCHA script not loaded. Please refresh and try again.';
+            setBusy(false);
+            return;
+        }
 
-            var formData = new FormData(form);
+        grecaptcha.ready(function () {
+            grecaptcha.execute(SITE_KEY, { action: 'submit' })
+                .then(function (token) {
+                    // Put token into hidden field – backend expects this name
+                    tokenField.value = token;
 
-            return fetch('/bin/wcm/sfmc', {
-              method: 'POST',
-              body: formData,
-              credentials: 'same-origin'
-            });
-          })
-          .then(function(response) {
-            if (!response) return;
-            return response.json();
-          })
-          .then(function(json) {
-            if (!json) return;
-            // Expecting {message, error, httpCode, requestId}
-            setResult(JSON.stringify(json, null, 2));
-          })
-          .catch(function(err) {
-            console.error('Submit error', err);
-            setResult('Fetch or reCAPTCHA error: ' + err);
-          })
-          .finally(function() {
-            setLoading(false);
-          });
-      });
+                    // Now submit actual form to the servlet
+                    var formData = new FormData(form);
+                    var url = form.getAttribute('action') || '/bin/wcm/sfmc';
+
+                    resultBox.textContent = 'Submitting to SFMC…';
+                    setBusy(true, 'Submitting…');
+
+                    fetch(url, {
+                        method: 'POST',
+                        body: formData,
+                        credentials: 'same-origin'
+                    })
+                        .then(function (response) {
+                            // Read as text first (AEM sends HTML on 500, etc.)
+                            return response.text().then(function (text) {
+                                return { status: response.status, text: text };
+                            });
+                        })
+                        .then(function (resp) {
+                            setBusy(false);
+
+                            var text   = resp.text;
+                            var status = resp.status;
+
+                            try {
+                                var json = JSON.parse(text);
+
+                                // Expecting: { message, error, httpCode, requestId }
+                                var message   = json.message   || '';
+                                var errorFlag = !!json.error;
+                                var httpCode  = json.httpCode || status;
+                                var requestId = json.requestId || '';
+
+                                resultBox.textContent =
+                                    'Message   : ' + message   + '\n' +
+                                    'Error     : ' + errorFlag + '\n' +
+                                    'HTTP Code : ' + httpCode  + '\n' +
+                                    'RequestId : ' + requestId + '\n\n' +
+                                    'Raw JSON:\n' + JSON.stringify(json, null, 2);
+                            } catch (ex) {
+                                // Not JSON – likely an HTML error page
+                                resultBox.textContent =
+                                    'Fetch or parse error: ' + ex.message +
+                                    '\n\nRaw response (' + status + '):\n' + text;
+                            }
+                        })
+                        .catch(function (err) {
+                            setBusy(false);
+                            resultBox.textContent = 'Network error: ' + err;
+                        });
+                })
+                .catch(function (err) {
+                    setBusy(false);
+                    resultBox.textContent =
+                        'reCAPTCHA execute failed: ' + err;
+                });
+        });
     });
-  });
 })();
 </script>
-
 </body>
 </html>
