@@ -4,229 +4,108 @@
     <meta charset="UTF-8">
     <title>SFMC Form Test</title>
 
-    <!-- Simple styles just so it looks reasonable -->
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background: #0f172a;
-            color: #e5e7eb;
-            margin: 0;
-            padding: 40px;
-        }
-        h1 {
-            margin-top: 0;
-        }
-        .container {
-            max-width: 640px;
-            margin: 0 auto;
-            background: #111827;
-            padding: 24px 28px;
-            border-radius: 8px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.4);
-        }
-        label {
-            display: block;
-            margin-bottom: 8px;
-            font-size: 0.95rem;
-        }
-        input[type="text"],
-        input[type="email"],
-        textarea {
-            width: 100%;
-            padding: 8px 10px;
-            margin-bottom: 14px;
-            border-radius: 4px;
-            border: 1px solid #4b5563;
-            background: #020617;
-            color: #e5e7eb;
-            box-sizing: border-box;
-            font-size: 0.95rem;
-        }
-        textarea {
-            resize: vertical;
-        }
-        button {
-            display: inline-block;
-            padding: 10px 20px;
-            border-radius: 999px;
-            border: none;
-            cursor: pointer;
-            font-size: 1rem;
-            background: #3b82f6;
-            color: #f9fafb;
-            font-weight: 600;
-        }
-        button:disabled {
-            opacity: 0.6;
-            cursor: default;
-        }
-        pre {
-            background: #020617;
-            border-radius: 6px;
-            padding: 12px 14px;
-            font-size: 0.85rem;
-            max-height: 260px;
-            overflow: auto;
-            margin-top: 18px;
-            white-space: pre-wrap;
-            word-break: break-word;
-        }
-        .hint {
-            font-size: 0.8rem;
-            color: #9ca3af;
-            margin-bottom: 8px;
-        }
-    </style>
+    <!-- IMPORTANT: AEM inserts CSRF token here -->
+    <meta name="cq-csrf-token" content="${csrfToken}">
 
-    <!-- reCAPTCHA v3 – replace YOUR_SITE_KEY_HERE with your real site key -->
-    <script
-        src="https://www.google.com/recaptcha/api.js?render=YOUR_SITE_KEY_HERE"
-        async defer></script>
+    <script src="https://www.google.com/recaptcha/api.js?render=YOUR_SITE_KEY_HERE" async defer></script>
+
+    <style>
+        body {font-family: Arial;background:#0f172a;color:#e5e7eb;padding:40px;}
+        .container {max-width:650px;margin:auto;background:#111827;padding:24px;border-radius:8px}
+        input,textarea {width:100%;padding:9px;margin-bottom:12px;background:#020617;color:#fff;border:1px solid #4b5563;border-radius:4px}
+        button {padding:10px 16px;background:#3b82f6;color:white;border:none;border-radius:6px;cursor:pointer}
+        pre {background:#020617;padding:12px;border-radius:6px;color:#fff;white-space:pre-wrap}
+    </style>
 </head>
 <body>
+
 <div class="container">
     <h1>SFMC Form Test</h1>
-    <p class="hint">
-        This posts to <code>/bin/wcm/sfmc</code> and expects JSON:
-        <code>{ message, error, httpCode, requestId }</code>.
-    </p>
 
     <form id="sfmcForm" action="/bin/wcm/sfmc" method="post">
-        <label>
-            Email
-            <input type="email" name="EmailAddress"
-                   value="test@example.com" required>
-        </label>
 
-        <label>
-            Phone
-            <input type="text" name="Phone" value="1234567890">
-        </label>
+        <label>Email</label>
+        <input type="email" name="EmailAddress" value="test@example.com" required>
 
-        <label>
-            MessageBody (optional)
-            <textarea name="MessageBody" rows="3">
-Some optional message body text from the front end.
-            </textarea>
-        </label>
+        <label>Phone</label>
+        <input type="text" name="Phone" value="1234567890">
 
-        <!-- Your own form ID – flows through to SFMC -->
+        <label>Message Body</label>
+        <textarea name="MessageBody" rows="3">Some optional message body text.</textarea>
+
         <input type="hidden" name="FormID" value="AEM-Test-Form-001">
 
-        <!-- reCAPTCHA v3 token will be written here -->
-        <input type="hidden"
-               id="recapToken"
-               name="g-recaptcha-response"
-               value="">
+        <!-- reCAPTCHA token -->
+        <input type="hidden" id="recapToken" name="g-recaptcha-response" value="">
 
-        <button type="submit" id="submitBtn">Submit</button>
+        <button id="submitBtn">Submit</button>
     </form>
 
     <pre id="sfmcResult">Response will appear here…</pre>
 </div>
 
 <script>
-(function () {
-    // MUST match the key used in the script URL above
-    var SITE_KEY   = 'YOUR_SITE_KEY_HERE';
-    var form       = document.getElementById('sfmcForm');
-    var resultBox  = document.getElementById('sfmcResult');
-    var tokenField = document.getElementById('recapToken');
-    var submitBtn  = document.getElementById('submitBtn');
+(function() {
 
-    if (!form) {
-        console.warn('[SFMC] Form #sfmcForm not found.');
-        return;
-    }
+    var SITE_KEY = "YOUR_SITE_KEY_HERE";
+    var form = document.getElementById("sfmcForm");
+    var resultBox = document.getElementById("sfmcResult");
+    var submitBtn = document.getElementById("submitBtn");
+    var recapField = document.getElementById("recapToken");
+    var csrf = document.querySelector("meta[name='cq-csrf-token']").content;
 
-    function setBusy(isBusy, text) {
-        if (isBusy) {
-            submitBtn.disabled = true;
-            submitBtn.textContent = text || 'Submitting…';
-        } else {
-            submitBtn.disabled = false;
-            submitBtn.textContent = 'Submit';
-        }
-    }
-
-    form.addEventListener('submit', function (e) {
+    form.addEventListener("submit", function(e) {
         e.preventDefault();
 
-        resultBox.textContent = 'Getting reCAPTCHA token…';
-        setBusy(true, 'Getting token…');
+        resultBox.textContent = "Getting reCAPTCHA…";
 
-        if (!window.grecaptcha) {
-            resultBox.textContent =
-                'reCAPTCHA script not loaded. Please refresh and try again.';
-            setBusy(false);
-            return;
-        }
+        grecaptcha.ready(function() {
+            grecaptcha.execute(SITE_KEY, { action: "submit" })
+                .then(function(token) {
 
-        grecaptcha.ready(function () {
-            grecaptcha.execute(SITE_KEY, { action: 'submit' })
-                .then(function (token) {
-                    // Put token into hidden field – backend expects this name
-                    tokenField.value = token;
+                    recapField.value = token;
 
-                    // Now submit actual form to the servlet
                     var formData = new FormData(form);
-                    var url = form.getAttribute('action') || '/bin/wcm/sfmc';
 
-                    resultBox.textContent = 'Submitting to SFMC…';
-                    setBusy(true, 'Submitting…');
+                    // **CRITICAL FIX**
+                    formData.append(":cq_csrf_token", csrf);
 
-                    fetch(url, {
-                        method: 'POST',
+                    resultBox.textContent = "Submitting to servlet…";
+
+                    fetch("/bin/wcm/sfmc", {
+                        method: "POST",
                         body: formData,
-                        credentials: 'same-origin'
+                        credentials: "same-origin"
                     })
-                        .then(function (response) {
-                            // Read as text first (AEM sends HTML on 500, etc.)
-                            return response.text().then(function (text) {
-                                return { status: response.status, text: text };
-                            });
-                        })
-                        .then(function (resp) {
-                            setBusy(false);
+                    .then(resp => resp.text().then(text => ({ status: resp.status, text })))
+                    .then(resp => {
 
-                            var text   = resp.text;
-                            var status = resp.status;
+                        try {
+                            var json = JSON.parse(resp.text);
+                            resultBox.textContent =
+                                "Message: " + json.message + "\n" +
+                                "Error: "   + json.error + "\n"   +
+                                "HTTP: "    + json.httpCode + "\n" +
+                                "RequestId: " + json.requestId + "\n\n" +
+                                JSON.stringify(json, null, 2);
+                        } catch (ex) {
+                            // AEM returned HTML (400, 500, filter blocked)
+                            resultBox.textContent =
+                                "Non-JSON response (" + resp.status + "):\n\n" +
+                                resp.text;
+                        }
+                    })
+                    .catch(err => {
+                        resultBox.textContent = "Network error: " + err;
+                    });
 
-                            try {
-                                var json = JSON.parse(text);
-
-                                // Expecting: { message, error, httpCode, requestId }
-                                var message   = json.message   || '';
-                                var errorFlag = !!json.error;
-                                var httpCode  = json.httpCode || status;
-                                var requestId = json.requestId || '';
-
-                                resultBox.textContent =
-                                    'Message   : ' + message   + '\n' +
-                                    'Error     : ' + errorFlag + '\n' +
-                                    'HTTP Code : ' + httpCode  + '\n' +
-                                    'RequestId : ' + requestId + '\n\n' +
-                                    'Raw JSON:\n' + JSON.stringify(json, null, 2);
-                            } catch (ex) {
-                                // Not JSON – likely an HTML error page
-                                resultBox.textContent =
-                                    'Fetch or parse error: ' + ex.message +
-                                    '\n\nRaw response (' + status + '):\n' + text;
-                            }
-                        })
-                        .catch(function (err) {
-                            setBusy(false);
-                            resultBox.textContent = 'Network error: ' + err;
-                        });
-                })
-                .catch(function (err) {
-                    setBusy(false);
-                    resultBox.textContent =
-                        'reCAPTCHA execute failed: ' + err;
                 });
         });
+
     });
+
 })();
 </script>
+
 </body>
 </html>
