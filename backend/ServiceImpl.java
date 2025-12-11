@@ -3,13 +3,21 @@ package com.mnt.axp.common.core.services.impl;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.mnt.axp.common.core.config.SfmcConfig;
+import com.mnt.axp.common.core.models.form.Container;
+import com.mnt.axp.common.core.models.bootstrapform.BootstrapContainer;
+import com.mnt.axp.common.core.models.bootstrapform.BootstrapKVPImpl;
 import com.mnt.axp.common.core.services.SfmcService;
 import com.mnt.axp.common.core.utils.ApiClient;
+import com.mnt.axp.common.core.utils.FormHelper;
 import com.mnt.axp.common.core.utils.Recaptcha;
+
 import org.apache.commons.lang3.StringUtils;
+import org.apache.sling.api.SlingHttpServletRequest;
 import org.apache.sling.api.request.RequestParameter;
 import org.apache.sling.api.request.RequestParameterMap;
-import org.osgi.service.cm.Configuration;
+import org.apache.sling.api.resource.Resource;
+import org.apache.sling.api.resource.ResourceResolver;
 import org.osgi.service.cm.ConfigurationAdmin;
 import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
@@ -25,30 +33,59 @@ import java.io.IOException;
 import java.time.Instant;
 import java.util.*;
 
+/**
+ * SFMC integration service.
+ *
+ * This class:
+ *  1) Validates reCAPTCHA using existing Recaptcha helper.
+ *  2) Fetches an OAuth access token from SFMC.
+ *  3) Resolves the target Data Extension key.
+ *  4) Builds a JSON payload from:
+ *      - All request parameters (dynamic – supports new fields automatically)
+ *      - Hidden / private fields authored on the form (legacy + bootstrap)
+ *  5) Posts the payload to SFMC.
+ *  6) Maps the response into {@link SalesforceResponse}.
+ */
 @Component(service = SfmcService.class, immediate = true)
-@Designate(ocd = SfmcServiceImpl.Config.class)
+@Designate(ocd = SfmcServiceImpl.SfmcConfig.class)
 public class SfmcServiceImpl implements SfmcService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(SfmcServiceImpl.class);
 
-    // TODO: update this PID + property name to match your existing repayment / Salesforce config
-    private static final String RECAPTCHA_CONFIG_PID = "com.mnt.axp.common.core.services.RepaymentService";
-    private static final String RECAPTCHA_SECRET_PROP = "greCAPTCHA_secretKey";
+    /**
+     * Legacy & Bootstrap container resource types.
+     * Used to distinguish which Sling Model to adapt to.
+     */
+    private static final String RT_LEGACY_CONTAINER =
+            "axp-common/components/forms/form-container";
+    private static final String RT_BOOTSTRAP_CONTAINER =
+            "axp-common/components/bootstrap/form/form-container";
 
-    // Internal fields we do not want in MessageBody
-    private static final Set<String> INTERNAL_FIELDS = new HashSet<String>(
+    /**
+     * Search paths for locating a form based on formPathHash.
+     * Tweak if your forms live somewhere more specific.
+     */
+    private static final List<String> FORM_SEARCH_PATHS =
+            Collections.unmodifiableList(Arrays.asList("/content"));
+
+    /**
+     * Parameters that should never be forwarded to SFMC.
+     */
+    private static final Set<String> PARAMS_TO_IGNORE = new HashSet<>(
             Arrays.asList(
                     "g-recaptcha-response",
-                    ":cq_csrf_token",
-                    "_charset_",
-                    "_successURL",
-                    "_errorURL",
-                    "MessageBody"
+                    "formPath",
+                    "formPathHash",
+                    "formResourceType"
             )
     );
 
+    // ------------------------------------------------------------------------
+    // OSGi config
+    // ------------------------------------------------------------------------
+
     @ObjectClassDefinition(name = "AXP SFMC Integration")
-    public @interface Config {
+    public @interface SfmcConfig {
 
         @AttributeDefinition(name = "SFMC Auth Base URL")
         String sfmc_auth_base();
@@ -70,9 +107,14 @@ public class SfmcServiceImpl implements SfmcService {
 
         @AttributeDefinition(name = "Enable Debug Logs")
         boolean debug_logs() default false;
+
+        @AttributeDefinition(name = "Recaptcha Public Key")
+        String recaptchaPublicKey();
+
+        @AttributeDefinition(name = "Recaptcha Private Key")
+        String recaptchaPrivateKey();
     }
 
-    // OSGi config values
     private String authBase;
     private String restBase;
     private String clientId;
@@ -80,6 +122,8 @@ public class SfmcServiceImpl implements SfmcService {
     private String accountId;
     private String defaultDeKey;
     private boolean debugLogs;
+    private String recaptchaPublicKey;
+    private String recaptchaPrivateKey;
 
     // Utilities
     private final ApiClient apiClient = new ApiClient();
@@ -88,7 +132,7 @@ public class SfmcServiceImpl implements SfmcService {
     private ConfigurationAdmin configurationAdmin;
 
     @Activate
-    protected void activate(Config config) {
+    protected void activate(final SfmcConfig config) {
         this.authBase = trimTrailingSlash(config.sfmc_auth_base());
         this.restBase = trimTrailingSlash(config.sfmc_rest_base());
         this.clientId = config.sfmc_client_id();
@@ -96,304 +140,499 @@ public class SfmcServiceImpl implements SfmcService {
         this.accountId = config.sfmc_account_id();
         this.defaultDeKey = config.sfmc_default_de_key();
         this.debugLogs = config.debug_logs();
+        this.recaptchaPublicKey = config.recaptchaPublicKey();
+        this.recaptchaPrivateKey = config.recaptchaPrivateKey();
 
-        LOGGER.info("[SFMC] Service activated. authBase={}, restBase={}, defaultDeKey={}, debugLogs={}",
-                authBase, restBase, defaultDeKey, debugLogs);
+        LOGGER.debug(
+                "[SFMC] Service activated. authBase={}, restBase={}, defaultDeKey={}, debugLogs={}, recaptchaPublicKey set? {}, recaptchaPrivateKey set? {}",
+                authBase, restBase, defaultDeKey, debugLogs,
+                StringUtils.isNotBlank(recaptchaPublicKey),
+                StringUtils.isNotBlank(recaptchaPrivateKey)
+        );
     }
 
-    private String trimTrailingSlash(String value) {
+    private String trimTrailingSlash(final String value) {
         if (value == null) {
             return null;
         }
         return value.endsWith("/") ? value.substring(0, value.length() - 1) : value;
     }
 
-    // ========================================================================
-    // Main entry
-    // ========================================================================
+    // ------------------------------------------------------------------------
+    // Public API
+    // ------------------------------------------------------------------------
 
     @Override
-    public SalesforceResponse submitToSfmc(RequestParameterMap params,
-                                           HttpServletRequest request) throws IOException {
-        SalesforceResponse out = new SalesforceResponse();
+    public SalesforceResponse submitToSfmc(final RequestParameterMap params,
+                                           final HttpServletRequest request) throws IOException {
+
+        final SalesforceResponse out = new SalesforceResponse();
         final String submissionId = UUID.randomUUID().toString();
-        final String formId = getString(params, "FormID",
-                getString(params, "FormId", getString(params, "formId", "")));
+        final String formId = getString(params, "formID", "FormID-Unknown");
 
-        LOGGER.info("[SFMC] New submission. submissionId={}, FormID={}", submissionId, formId);
+        LOGGER.debug("[SFMC] New submission. submissionId={}, formId={}", submissionId, formId);
 
-        // 1) reCAPTCHA score – NEVER blocks SFMC submission
-        double score = resolveRecaptchaScore(params, request);
-        out.score = score;
-        LOGGER.info("[SFMC] reCAPTCHA score (will be sent to SFMC): {}", score);
+        // 1) reCAPTCHA
+        final double score = resolveRecaptchaScore(params, request);
+        LOGGER.debug("[SFMC] reCAPTCHA score (will be sent to SFMC): {}", score);
 
-        // 2) Get OAuth token
-        String accessToken = getAccessToken();
+        // 2) OAuth token
+        final String accessToken = getAccessToken();
         if (StringUtils.isBlank(accessToken)) {
-            out.message = "Auth failed: unable to obtain SFMC access token";
             out.error = true;
             out.httpCode = 500;
+            out.message = "Auth failed: unable to obtain SFMC access token";
             LOGGER.error("[SFMC] {}", out.message);
             return out;
         }
+        LOGGER.debug("[SFMC] Obtained SFMC access token (length={})",
+                accessToken.length());
 
-        // 3) Determine Data Extension key
-        String deKey = getString(params, "DataExtensionKey", defaultDeKey);
+        // 3) Data Extension key
+        final String deKey = getString(params, "data-extension-key", defaultDeKey);
         if (StringUtils.isBlank(deKey)) {
-            out.message = "Missing DataExtensionKey and no default is configured";
             out.error = true;
             out.httpCode = 400;
+            out.message = "Missing data-extension-key and no default is configured";
             LOGGER.error("[SFMC] {}", out.message);
             return out;
         }
+        LOGGER.debug("[SFMC] Using Data Extension key: {}", deKey);
+
+        // 3b) Resolve private/hidden fields from the form models (legacy + bootstrap)
+        final Map<String, String> formAuthoredFields = resolveFormAuthoredFields(params, request);
+        LOGGER.debug("[SFMC] Resolved {} authored private/hidden fields: {}",
+                formAuthoredFields.size(), formAuthoredFields.keySet());
 
         // 4) Build payload
-        JsonObject payload = buildPayload(params, submissionId, formId, score);
+        final JsonObject payload = buildPayload(params, submissionId, formId, score, formAuthoredFields);
         if (debugLogs) {
             LOGGER.debug("[SFMC] Payload for DE {}: {}", deKey, payload);
         }
 
         // 5) POST to SFMC
-        String url = restBase + "/data/v1/async/dataextensions/key:" + deKey + "/rows";
-        JsonObject responseJson = postToSfmc(url, accessToken, payload);
+        final String url = restBase + "/data/v1/async/dataextensions/key/" + deKey + "/rows";
+        final JsonObject responseJson = postToSfmc(url, accessToken, payload);
 
-        // 6) Interpret and map to SalesforceResponse
+        // 6) Map into SalesforceResponse
         handleSfmcResponse(responseJson, out);
 
-        LOGGER.info("[SFMC] Completed. error={}, httpCode={}, requestId={}",
+        LOGGER.debug("[SFMC] Completed. error={}, httpCode={}, requestId={}",
                 out.error, out.httpCode, out.requestId);
 
         return out;
     }
 
-    // ========================================================================
-    // reCAPTCHA
-    // ========================================================================
+    // ------------------------------------------------------------------------
+    // Step 1: reCAPTCHA (existing helper)
+    // ------------------------------------------------------------------------
 
     /**
-     * Calculates reCAPTCHA score for this SFMC submission.
-     * This method NEVER blocks the submission – any issue results in score 0.0.
+     * Uses existing {@link Recaptcha#isCaptchaValid(String, String, HttpServletRequest)}
+     * implementation exactly as before.
      */
-    private double resolveRecaptchaScore(RequestParameterMap params,
-                                         HttpServletRequest request) {
+    private double resolveRecaptchaScore(final RequestParameterMap params,
+                                         final HttpServletRequest request) {
 
-        String token = getString(params, "g-recaptcha-response", "");
+        final String token = getString(params, "g-recaptcha-response", "");
+
         if (StringUtils.isBlank(token)) {
-            LOGGER.info("[SFMC] No g-recaptcha-response found; reCAPTCHA score = 0.0 (submission continues).");
-            return 0.0d;
+            LOGGER.info("[SFMC] No reCAPTCHA response found; reCAPTCHA score = 0.0 (submission continues).");
+            return 0.0;
         }
 
-        String secretKey = resolveRecaptchaSecretFromConfig();
+        final String secretKey = recaptchaPrivateKey;
         if (StringUtils.isBlank(secretKey)) {
             LOGGER.warn("[SFMC] reCAPTCHA secret key not available; score = 0.0 (submission continues).");
-            return 0.0d;
+            return 0.0;
         }
 
         try {
-            double score = Recaptcha.isCaptchaValid(secretKey, token, request);
-            LOGGER.info("[SFMC] reCAPTCHA validation completed. score={}", score);
+            final double score = Recaptcha.isCaptchaValid(secretKey, token, request);
+            LOGGER.debug("[SFMC] reCAPTCHA validation completed. score={}", score);
             return score;
         } catch (Exception e) {
             LOGGER.error("[SFMC] reCAPTCHA validation error; score = 0.0 (submission continues).", e);
-            return 0.0d;
+            return 0.0;
         }
     }
 
-    /**
-     * Reads the reCAPTCHA secret key from another existing OSGi config.
-     * Adjust RECAPTCHA_CONFIG_PID and RECAPTCHA_SECRET_PROP to match your setup.
-     */
-    private String resolveRecaptchaSecretFromConfig() {
-        if (configurationAdmin == null) {
-            LOGGER.warn("[SFMC] ConfigurationAdmin is not available, cannot read reCAPTCHA secret");
-            return "";
-        }
-        try {
-            Configuration cfg = configurationAdmin.getConfiguration(RECAPTCHA_CONFIG_PID, null);
-            if (cfg == null) {
-                LOGGER.warn("[SFMC] No configuration found for PID={}", RECAPTCHA_CONFIG_PID);
-                return "";
-            }
-            Dictionary<String, Object> props = cfg.getProperties();
-            if (props == null) {
-                LOGGER.warn("[SFMC] Configuration for PID={} has no properties", RECAPTCHA_CONFIG_PID);
-                return "";
-            }
-            Object v = props.get(RECAPTCHA_SECRET_PROP);
-            if (v != null) {
-                String secret = v.toString();
-                LOGGER.debug("[SFMC] Loaded reCAPTCHA secret from PID={} property={}", RECAPTCHA_CONFIG_PID, RECAPTCHA_SECRET_PROP);
-                return secret;
-            }
-            LOGGER.warn("[SFMC] Property {} not found in PID={}", RECAPTCHA_SECRET_PROP, RECAPTCHA_CONFIG_PID);
-        } catch (Exception e) {
-            LOGGER.warn("[SFMC] Unable to read reCAPTCHA secret from PID={}", RECAPTCHA_CONFIG_PID, e);
-        }
-        return "";
-    }
-
-    // ========================================================================
-    // Auth + POST to SFMC
-    // ========================================================================
+    // ------------------------------------------------------------------------
+    // Step 2: OAuth token
+    // ------------------------------------------------------------------------
 
     private String getAccessToken() {
-        String url = authBase + "/v2/token";
+        final String url = authBase + "/v2/token";
 
-        JsonObject body = new JsonObject();
+        final JsonObject body = new JsonObject();
         body.addProperty("grant_type", "client_credentials");
         body.addProperty("client_id", clientId);
         body.addProperty("client_secret", clientSecret);
         body.addProperty("account_id", accountId);
 
-        JsonObject json = apiClient.makeApiCall("POST", url, body, Collections.<String, String>emptyMap());
+        LOGGER.debug("[SFMC] Requesting access token from {}", url);
+
+        final JsonObject json = apiClient.makeApiCall("POST", url, body,
+                Collections.<String, String>emptyMap());
 
         if (json == null) {
             LOGGER.error("[SFMC] Auth failed: null response");
             return null;
         }
 
+        if (debugLogs) {
+            LOGGER.debug("[SFMC] Auth response: {}", json);
+        }
+
         if (json.has("access_token") && json.get("access_token").isJsonPrimitive()) {
-            String token = json.get("access_token").getAsString();
-            if (debugLogs) {
-                LOGGER.debug("[SFMC] Auth success. token length={}", token != null ? token.length() : 0);
-            }
+            final String token = json.get("access_token").getAsString();
+            LOGGER.debug("[SFMC] Auth success. token length={}", token == null ? 0 : token.length());
             return token;
         }
 
-        int code = json.has("httpCode") && json.get("httpCode").isJsonPrimitive()
-                ? json.get("httpCode").getAsInt()
-                : -1;
-
-        String msg = json.has("message") && json.get("message").isJsonPrimitive()
-                ? json.get("message").getAsString()
-                : "Unknown auth error";
+        int code = 0;
+        String msg = "Unknown auth error";
+        if (json.has("httpCode") && json.get("httpCode").isJsonPrimitive()) {
+            code = json.get("httpCode").getAsInt();
+        }
+        if (json.has("message") && json.get("message").isJsonPrimitive()) {
+            msg = json.get("message").getAsString();
+        }
 
         LOGGER.error("[SFMC] Auth failed. httpCode={} message={}", code, msg);
         return null;
     }
 
-    private JsonObject postToSfmc(String url, String token, JsonObject payload) {
-        Map<String, String> headers = new HashMap<String, String>();
-        headers.put("Authorization", "Bearer " + token);
-        headers.put("Accept", "application/json");
-        return apiClient.makeApiCall("POST", url, payload, headers);
-    }
+    // ------------------------------------------------------------------------
+    // Step 3b: Resolve hidden + private fields from form models
+    // ------------------------------------------------------------------------
 
-    private void handleSfmcResponse(JsonObject responseJson, SalesforceResponse out) {
-        if (responseJson == null) {
-            out.message = "Null response from SFMC";
-            out.error = true;
-            out.httpCode = 500;
-            return;
+    /**
+     * Resolves all *authored* fields on the form (hidden + private) for both
+     * legacy and bootstrap containers.
+     *
+     * These values will override or supplement the raw request parameters
+     * when the payload is built.
+     */
+    private Map<String, String> resolveFormAuthoredFields(final RequestParameterMap params,
+                                                          final HttpServletRequest request) {
+
+        final Map<String, String> authored = new LinkedHashMap<>();
+
+        if (!(request instanceof SlingHttpServletRequest)) {
+            LOGGER.debug("[SFMC] Not a SlingHttpServletRequest; skipping form model resolution.");
+            return authored;
         }
 
-        int httpCode = responseJson.has("httpCode") && responseJson.get("httpCode").isJsonPrimitive()
-                ? responseJson.get("httpCode").getAsInt()
-                : 200;
-        out.httpCode = httpCode;
+        final SlingHttpServletRequest slingRequest = (SlingHttpServletRequest) request;
+        final ResourceResolver resolver = slingRequest.getResourceResolver();
 
-        if (responseJson.has("requestId") && responseJson.get("requestId").isJsonPrimitive()) {
-            out.requestId = responseJson.get("requestId").getAsString();
+        Resource formResource = findFormResource(params, resolver);
+        if (formResource == null) {
+            LOGGER.debug("[SFMC] No form resource resolved from request; no authored fields added.");
+            return authored;
         }
 
-        boolean respError = httpCode >= 400 ||
-                (responseJson.has("error") && responseJson.get("error").isJsonPrimitive()
-                        && responseJson.get("error").getAsBoolean());
-        out.error = respError;
+        LOGGER.debug("[SFMC] Resolved form resource {} (type={}) for authored fields.",
+                formResource.getPath(), formResource.getResourceType());
 
-        // Prefer SFMC resultMessages if present
-        if (responseJson.has("resultMessages") && responseJson.get("resultMessages").isJsonArray()) {
-            JsonArray msgs = responseJson.getAsJsonArray("resultMessages");
-            StringBuilder sb = new StringBuilder();
-            for (JsonElement e : msgs) {
-                if (e.isJsonPrimitive()) {
-                    if (sb.length() > 0) {
-                        sb.append(" | ");
-                    }
-                    sb.append(e.getAsString());
+        try {
+            // --- Legacy container ---
+            if (formResource.isResourceType(RT_LEGACY_CONTAINER)) {
+                final Container model = formResource.adaptTo(Container.class);
+                if (model != null) {
+                    authored.putAll(FormHelper.getPrivateFields(model));
+                    authored.putAll(FormHelper.getHiddenFields(model, slingRequest.getRequestParameterMap()));
                 }
             }
-            out.message = sb.length() > 0 ? sb.toString() : (respError ? "SFMC call failed" : "SFMC accepted request");
-            return;
+            // --- Bootstrap container ---
+            else if (formResource.isResourceType(RT_BOOTSTRAP_CONTAINER)) {
+                final BootstrapContainer model = formResource.adaptTo(BootstrapContainer.class);
+                if (model != null) {
+                    authored.putAll(extractBootstrapPrivateFields(model));
+                    authored.putAll(extractBootstrapHiddenFields(model, slingRequest.getRequestParameterMap()));
+                }
+            }
+            // --- Fallback: try both models regardless of resourceType ---
+            else {
+                final Container legacyModel = formResource.adaptTo(Container.class);
+                if (legacyModel != null) {
+                    authored.putAll(FormHelper.getPrivateFields(legacyModel));
+                    authored.putAll(FormHelper.getHiddenFields(legacyModel, slingRequest.getRequestParameterMap()));
+                }
+
+                final BootstrapContainer bootstrapModel = formResource.adaptTo(BootstrapContainer.class);
+                if (bootstrapModel != null) {
+                    authored.putAll(extractBootstrapPrivateFields(bootstrapModel));
+                    authored.putAll(extractBootstrapHiddenFields(bootstrapModel, slingRequest.getRequestParameterMap()));
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.error("[SFMC] Error resolving authored fields from form at " + formResource.getPath(), e);
         }
 
-        // Fallback to "message" from ApiClient / SFMC
-        if (responseJson.has("message") && responseJson.get("message").isJsonPrimitive()) {
-            out.message = responseJson.get("message").getAsString();
-        } else if (!respError) {
-            out.message = "SFMC accepted request";
-        } else {
-            out.message = "SFMC call failed";
-        }
+        LOGGER.debug("[SFMC] Final authored fields map size={} keys={}",
+                authored.size(), authored.keySet());
+
+        return authored;
     }
 
-    // ========================================================================
-    // Payload helpers
-    // ========================================================================
+    /**
+     * Attempts to locate the form resource, first by explicit formPath, then
+     * by formPathHash + FormHelper.
+     */
+    private Resource findFormResource(final RequestParameterMap params,
+                                      final ResourceResolver resolver) {
 
-    private JsonObject buildPayload(RequestParameterMap params,
-                                    String submissionId,
-                                    String formId,
-                                    double score) {
+        final String explicitPath = getString(params, "formPath", "");
+        if (StringUtils.isNotBlank(explicitPath)) {
+            final Resource r = resolver.getResource(explicitPath);
+            if (r != null) {
+                LOGGER.debug("[SFMC] Form resolved via explicit formPath={}", explicitPath);
+                return r;
+            }
+            LOGGER.warn("[SFMC] formPath={} did not resolve to a resource.", explicitPath);
+        }
 
-        JsonObject item = new JsonObject();
+        final String pathHash = getString(params, "formPathHash", "");
+        if (StringUtils.isBlank(pathHash)) {
+            LOGGER.debug("[SFMC] No formPathHash provided; cannot search for form.");
+            return null;
+        }
 
-        // Mandatory fields
+        LOGGER.debug("[SFMC] Searching for form via formPathHash={} in paths {}", pathHash, FORM_SEARCH_PATHS);
+
+        // First try bootstrap container
+        Resource form = FormHelper.findForm(pathHash, FORM_SEARCH_PATHS, RT_BOOTSTRAP_CONTAINER, resolver);
+        if (form != null) {
+            LOGGER.debug("[SFMC] Found bootstrap form resource {}", form.getPath());
+            return form;
+        }
+
+        // Fallback: legacy container
+        form = FormHelper.findForm(pathHash, FORM_SEARCH_PATHS, RT_LEGACY_CONTAINER, resolver);
+        if (form != null) {
+            LOGGER.debug("[SFMC] Found legacy form resource {}", form.getPath());
+            return form;
+        }
+
+        LOGGER.warn("[SFMC] No form resource found for formPathHash={}", pathHash);
+        return null;
+    }
+
+    private Map<String, String> extractBootstrapPrivateFields(final BootstrapContainer model) {
+        final Map<String, String> out = new LinkedHashMap<>();
+        if (model.getPrivateFields() != null) {
+            for (final BootstrapKVPImpl kvp : model.getPrivateFields()) {
+                if (kvp != null && StringUtils.isNotBlank(kvp.getKey())) {
+                    out.put(kvp.getKey(), StringUtils.defaultString(kvp.getValue()));
+                }
+            }
+        }
+        return out;
+    }
+
+    private Map<String, String> extractBootstrapHiddenFields(final BootstrapContainer model,
+                                                             final RequestParameterMap params) {
+        final Map<String, String> out = new LinkedHashMap<>();
+        if (model.getHiddenFields() != null) {
+            for (final BootstrapKVPImpl kvp : model.getHiddenFields()) {
+                if (kvp == null || StringUtils.isBlank(kvp.getKey())) {
+                    continue;
+                }
+                final RequestParameter hiddenParam = params.getValue(kvp.getKey());
+                final String value = hiddenParam == null ? "" : hiddenParam.getString();
+                out.put(kvp.getKey(), value);
+            }
+        }
+        return out;
+    }
+
+    // ------------------------------------------------------------------------
+    // Step 4: Build payload
+    // ------------------------------------------------------------------------
+
+    private JsonObject buildPayload(final RequestParameterMap params,
+                                    final String submissionId,
+                                    final String formId,
+                                    final double score,
+                                    final Map<String, String> authoredFields) {
+
+        final JsonObject item = new JsonObject();
+
+        // --- Core metadata fields (align names with SFMC DE columns) ---
         item.addProperty("AEMSubmissionID", submissionId);
         item.addProperty("FormID", formId);
+        // SFMC Postman example uses FormTS; use that instead of "Timestamp"
+        item.addProperty("FormTS", Instant.now().toString());
         item.addProperty("CaptchaScore", score);
-        item.addProperty("Timestamp", Instant.now().toString());
 
-        // MessageBody – either explicit or built from params
-        String messageBody = getString(params, "MessageBody", "");
-        if (StringUtils.isBlank(messageBody)) {
-            messageBody = buildMessageBodyFromParams(params);
+        // --- 4a. Forward ALL request parameters (dynamic) ---
+        for (Map.Entry<String, RequestParameter[]> entry : params.entrySet()) {
+            final String key = entry.getKey();
+            if (PARAMS_TO_IGNORE.contains(key)) {
+                continue;
+            }
+            if (item.has(key)) {
+                // Core field already set, skip
+                continue;
+            }
+
+            final RequestParameter[] values = entry.getValue();
+            if (values == null || values.length == 0) {
+                continue;
+            }
+            final RequestParameter p = values[0];
+            final String v = p == null ? "" : p.getString();
+            item.addProperty(key, v);
         }
-        item.addProperty("MessageBody", messageBody);
 
-        // Optional typical fields – adjust names to your DE schema
-        item.addProperty("FirstName", getString(params, "firstName", ""));
-        item.addProperty("LastName", getString(params, "lastName", ""));
-        item.addProperty("Email", getString(params, "email", ""));
-        item.addProperty("Phone", getString(params, "phone", ""));
-        item.addProperty("PostalCode", getString(params, "postalCode", ""));
-        item.addProperty("State", getString(params, "state", ""));
-        item.addProperty("Country", getString(params, "country", ""));
+        // --- 4b. Overlay authored private + hidden fields (server-side config) ---
+        for (Map.Entry<String, String> e : authoredFields.entrySet()) {
+            final String key = e.getKey();
+            final String value = e.getValue();
+            if (StringUtils.isBlank(key)) {
+                continue;
+            }
+            // Authored values override everything from the request.
+            item.addProperty(key, StringUtils.defaultString(value));
+        }
 
-        JsonArray items = new JsonArray();
+        // --- 4c. Special handling for MessageBody ---
+        // If MessageBody is still missing, build a simple body from all params.
+        if (!item.has("MessageBody")) {
+            final String messageBody = buildMessageBodyFromParams(params);
+            item.addProperty("MessageBody", messageBody);
+        }
+
+        // --- Wrap into { "items": [ item ] } as SFMC expects ---
+        final JsonArray items = new JsonArray();
         items.add(item);
 
-        JsonObject root = new JsonObject();
+        final JsonObject root = new JsonObject();
         root.add("items", items);
+
         return root;
     }
 
-    private String buildMessageBodyFromParams(RequestParameterMap params) {
-        StringBuilder sb = new StringBuilder();
-        for (Map.Entry<String, RequestParameter[]> e : params.entrySet()) {
-            String key = e.getKey();
-            if (INTERNAL_FIELDS.contains(key)) {
+    /**
+     * Fallback builder for MessageBody: pretty-prints all parameters so new fields
+     * automatically show up in SFMC emails/logs even if not explicitly mapped.
+     */
+    private String buildMessageBodyFromParams(final RequestParameterMap params) {
+        final StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, RequestParameter[]> entry : params.entrySet()) {
+            final String key = entry.getKey();
+            if (PARAMS_TO_IGNORE.contains(key)) {
                 continue;
             }
-            RequestParameter[] values = e.getValue();
-            if (values != null && values.length > 0) {
-                String v = values[0].getString();
-                if (StringUtils.isNotBlank(v)) {
-                    if (sb.length() > 0) {
-                        sb.append("\n");
-                    }
-                    sb.append(key).append(": ").append(v);
-                }
+            final RequestParameter[] values = entry.getValue();
+            if (values == null || values.length == 0) {
+                continue;
             }
+            final RequestParameter p = values[0];
+            final String value = p == null ? "" : p.getString();
+
+            if (StringUtils.isBlank(value)) {
+                continue;
+            }
+
+            sb.append(key).append(": ").append(value).append("\r\n");
         }
         return sb.toString();
     }
 
-    private String getString(RequestParameterMap params, String key, String def) {
+    private String getString(final RequestParameterMap params,
+                             final String key,
+                             final String def) {
         if (params == null) {
             return def;
         }
-        RequestParameter p = params.getValue(key);
-        return p != null ? p.getString() : def;
+        final RequestParameter p = params.getValue(key);
+        return p == null ? def : p.getString();
+    }
+
+    // ------------------------------------------------------------------------
+    // Step 5: POST to SFMC
+    // ------------------------------------------------------------------------
+
+    private JsonObject postToSfmc(final String url,
+                                  final String token,
+                                  final JsonObject payload) {
+
+        final Map<String, String> headers = new HashMap<>();
+        headers.put("Authorization", "Bearer " + token);
+        headers.put("Accept", "application/json");
+
+        LOGGER.debug("[SFMC] POSTing to {} with Authorization header and payload size {} bytes",
+                url, payload.toString().length());
+
+        return apiClient.makeApiCall("POST", url, payload, headers);
+    }
+
+    // ------------------------------------------------------------------------
+    // Step 6: Map response into SalesforceResponse
+    // ------------------------------------------------------------------------
+
+    private void handleSfmcResponse(final JsonObject responseJson,
+                                    final SalesforceResponse out) {
+
+        out.message = "null response from SFMC";
+        out.httpCode = 500;
+        out.error = true;
+
+        if (responseJson == null) {
+            LOGGER.error("[SFMC] Null response from SFMC");
+            return;
+        }
+
+        if (debugLogs) {
+            LOGGER.debug("[SFMC] Raw SFMC response: {}", responseJson);
+        }
+
+        // httpCode
+        if (responseJson.has("httpCode") && responseJson.get("httpCode").isJsonPrimitive()) {
+            out.httpCode = responseJson.get("httpCode").getAsInt();
+        }
+
+        // requestId
+        if (responseJson.has("requestId") && responseJson.get("requestId").isJsonPrimitive()) {
+            out.requestId = responseJson.get("requestId").getAsString();
+        }
+
+        boolean respError = out.httpCode >= 400;
+
+        // "error" flag if present
+        if (responseJson.has("error") && responseJson.get("error").isJsonPrimitive()) {
+            respError = responseJson.get("error").getAsBoolean();
+        }
+
+        // Collect resultMessages if present
+        final StringBuilder sb = new StringBuilder();
+        if (responseJson.has("resultMessages") && responseJson.get("resultMessages").isJsonArray()) {
+            final JsonArray msgs = responseJson.get("resultMessages").getAsJsonArray();
+            for (JsonElement el : msgs) {
+                if (el != null && el.isJsonObject()) {
+                    final JsonObject m = el.getAsJsonObject();
+                    final String type = m.has("resultType") ? m.get("resultType").getAsString() : "";
+                    final String code = m.has("resultCode") ? m.get("resultCode").getAsString() : "";
+                    final String msg = m.has("message") ? m.get("message").getAsString() : "";
+                    sb.append('[').append(type).append('/').append(code).append("] ").append(msg).append('\n');
+                }
+            }
+        }
+
+        if (sb.length() > 0) {
+            out.message = sb.toString().trim();
+        } else if (responseJson.has("message") && responseJson.get("message").isJsonPrimitive()) {
+            out.message = responseJson.get("message").getAsString();
+        } else {
+            out.message = respError ? "SFMC call failed" : "SFMC accepted request";
+        }
+
+        out.error = respError;
+
+        LOGGER.info("[SFMC] SFMC response mapped. httpCode={}, error={}, requestId={}, message={}",
+                out.httpCode, out.error, out.requestId, out.message);
     }
 }
