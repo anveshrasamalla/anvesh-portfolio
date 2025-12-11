@@ -109,3 +109,17 @@
 
 </body>
 </html>
+
+<!-- Render PRIVATE fields -->
+<sly data-sly-list.pf="${resource.getChild('privateFields').listChildren}">
+    <input type="hidden" 
+           name="${pf.valueMap['element-name']}" 
+           value="${pf.valueMap['value']}" />
+</sly>
+
+<!-- Render HIDDEN fields -->
+<sly data-sly-list.hf="${resource.getChild('hiddenFields').listChildren}">
+    <input type="hidden"
+           name="${hf.valueMap['element-name']}"
+           value="${hf.valueMap['value']}" />
+</sly>
