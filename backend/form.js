@@ -1,63 +1,118 @@
 /**
- * Handles SFMC form submission with reCAPTCHA v3 + JSON feedback
+ * AEM → SFMC Form Submit Handler
+ * Clean, production-ready, automatically handles new fields,
+ * builds MessageBody, injects captcha token, and posts to servlet.
  */
-(function () {
-  const form = document.getElementById("sfmcForm");
-  const statusEl = document.getElementById("sfmcStatus");
-  if (!form) return;
 
-  const servletPath = document
-    .querySelector("[data-component='sfmc-form']")
-    .getAttribute("data-servlet");
+(function ($) {
 
-  async function handleSubmit(e) {
-    e.preventDefault();
-    statusEl.textContent = "Submitting…";
+    let captchaReady = false;
+    let sleepTimer = false;
 
-    // Fetch reCAPTCHA token (v3)
-    let token = "";
-    if (typeof grecaptcha !== "undefined") {
-      try {
-        token = await grecaptcha.execute(
-          form.querySelector(".g-recaptcha").dataset.sitekey,
-          { action: "submit" }
-        );
-        const hidden = document.createElement("input");
-        hidden.type = "hidden";
-        hidden.name = "g-recaptcha-response";
-        hidden.value = token;
-        form.appendChild(hidden);
-      } catch (err) {
-        console.warn("⚠️ reCAPTCHA failed", err);
-      }
+    // -----------------------------------------
+    // Helper: Get captcha token before submit
+    // -----------------------------------------
+    function getCaptchaKey() {
+        grecaptcha.ready(function () {
+            grecaptcha.execute(window.recaptchaSiteKey, { action: 'submit' }).then(function (token) {
+                $("#g-recaptcha-response").val(token);
+                captchaReady = true;
+            });
+        });
     }
 
-    const data = new URLSearchParams(new FormData(form));
-
-    try {
-      const res = await fetch(servletPath, {
-        method: "POST",
-        headers: { Accept: "application/json" },
-        body: data,
-      });
-
-      const json = await res.json();
-      console.debug("SFMC Response:", json);
-
-      if (json.error) {
-        statusEl.className = "sfmc-status error";
-        statusEl.textContent = `⚠️ ${json.message}`;
-      } else {
-        statusEl.className = "sfmc-status success";
-        statusEl.textContent = `✅ ${json.message}`;
-        form.reset();
-      }
-    } catch (err) {
-      console.error("❌ Submission failed:", err);
-      statusEl.className = "sfmc-status error";
-      statusEl.textContent = "Submission failed. Try again later.";
+    // Sleep prevention helper
+    function resetSleepTimer() {
+        sleepTimer = false;
     }
-  }
 
-  form.addEventListener("submit", handleSubmit);
-})();
+    // -----------------------------------------
+    // Helper: Pad field names for readability
+    // -----------------------------------------
+    function pad(str, width) {
+        str = str || "";
+        while (str.length < width) str += " ";
+        return str;
+    }
+
+    // -----------------------------------------
+    // Build MessageBody by automatically looping
+    // through every field in the form.
+    //
+    // This ensures future fields are automatically included.
+    // -----------------------------------------
+    function buildMessageBody($form) {
+        let msg = "";
+        const fields = $form.serializeArray();
+
+        fields.forEach(function (field) {
+
+            // Skip captcha token
+            if (field.name === "g-recaptcha-response") return;
+
+            // Skip SFMC special keys
+            if (field.name === "formId" || field.name === "aemFormId") return;
+            if (field.name === "data-extension-key") return;
+
+            msg += pad(field.name + ":", 25) + field.value + "\n";
+        });
+
+        return msg;
+    }
+
+    // -----------------------------------------
+    // Main submit handler
+    // -----------------------------------------
+    window.processSalesforceForm = function (e) {
+
+        if (typeof e !== "undefined") e.preventDefault();
+
+        // Wait for captcha if not ready
+        if (captchaReady === false) {
+
+            if (sleepTimer === true) return;
+
+            sleepTimer = true;
+            getCaptchaKey();
+            return;
+        }
+
+        captchaReady = false;
+
+        // Correct form selection
+        const $form = $(".form-container");
+
+        // Build message body dynamically
+        const messageBody = buildMessageBody($form);
+        $("#MessageBody").val(messageBody);
+
+        // Build POST URL
+        const url = window.location.origin + "/bin/wcm/sfmc";
+
+        $.ajax({
+            url: url,
+            type: "POST",
+            data: $form.serialize(),
+
+            success: function (response) {
+                if (response.error === false) {
+                    showSuccess();
+                    resetSleepTimer();
+                    tealiumWithFormSuccess();
+                } else {
+                    showError();
+                    resetSleepTimer();
+                    tealiumWithFormFail();
+                }
+            },
+
+            error: function (error) {
+                console.error("SFMC AJAX error:", error);
+                showError();
+                tealiumWithFormFail();
+            }
+        });
+
+    };
+
+})(jQuery);
